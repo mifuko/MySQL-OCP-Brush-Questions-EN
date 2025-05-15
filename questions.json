@@ -1,0 +1,1586 @@
+[
+    {
+        "question": "### 试题 1:\n\nChoose two. Your MySQL server was upgraded from an earlier major version. The sales database contains three tables, one of which is the transactions table, which has 4 million rows. You are running low on disk space on the datadir partition and begin to investigate. Examine these commands and output:\n\n```sql\nmysql> show global variables like 'innodb_file_%';\n+-----------------------+-------+\n| Variable_name         | Value |\n+-----------------------+-------+\n| innodb_file_per_table | ON    |\n+-----------------------+-------+\n1 row in set (0.00 sec)\n```\n\n```bash\n# ls -l | grep ib\n-rw-r----- 1 mysql mysql       3287 Dec 12 07:54 ib_buffer_pool\n-rw-r----- 1 mysql mysql 125827192912 Dec 12 09:50 ibdata1\n-rw-r----- 1 mysql mysql   50331648 Dec 12 09:50 ib_logfile0\n-rw-r----- 1 mysql mysql   50331648 Dec 11 14:05 ib_logfile1\n-rw-r----- 1 mysql mysql   12582912 Dec 12 08:05 ibtmp1\n-rw-r----- 1 mysql mysql   25165824 Dec 12 09:50 mysql.ibd\n```\n\n```bash\n# ls -l sales/\ntotal 544\n-rw-r----- 1 mysql mysql 47550136 Dec 12 09:50 sales.ibd\n-rw-r----- 1 mysql mysql   114688 Dec 11 14:33 leads.ibd\n```\n\nWhich two statements are true?",
+        "selections": {
+            "A": "The transactions table was created with innodb_file_per_table=OFF.",
+            "B": "Truncating the sales and leads table will free up disk space.",
+            "C": "Executing SET GLOBAL innodb_row_format=COMPRESSED and then ALTER TABLE transactions will free up disk space.",
+            "D": "Executing ALTER TABLE transactions will enable you to free up disk space.",
+            "E": "Truncating the transactions table will free up the most disk space."
+        },
+        "answers": [
+            "A",
+            "B"
+        ],
+        "summary": "### 选项分析与考点总结\n\n**选项分析:**\n当前 `innodb_file_per_table` 设置为 `ON`，这意味着新创建的表或重建的表会使用独立的 `.ibd` 文件。然而，`ibdata1` 文件非常大（约125GB），并且在 `sales/` 目录下没有 `transactions.ibd` 文件，只有 `sales.ibd` 和 `leads.ibd`。这强烈暗示 `transactions` 表是在 `innodb_file_per_table` 为 `OFF` 时创建的，因此其数据存储在共享表空间 `ibdata1` 中 (A正确)。对于使用独立表空间 (`.ibd` 文件) 的表，如 `sales` 和 `leads`，执行 `TRUNCATE TABLE` 会删除并重建 `.ibd` 文件，从而将空间返还给操作系统 (B正确)。\n\n选项C提到的 `innodb_row_format` 不是一个全局变量，而是表级别的属性，且更改行格式本身不一定能直接通过 `SET GLOBAL` 实现。即使通过 `ALTER TABLE` 应用压缩，如果表在 `ibdata1` 中，空间也主要在 `ibdata1` 内部被标记为可用，不直接返还给OS。选项D，`ALTER TABLE` (例如 `ALTER TABLE transactions ENGINE=InnoDB;`) 如果表在 `ibdata1` 中，可以整理空间，但不会缩小 `ibdata1` 文件。如果表有自己的 `.ibd` 文件，`ALTER` 会重建表，可以回收空间。但题中 `transactions` 表在 `ibdata1` 中。选项E，由于 `transactions` 表数据在 `ibdata1` 中，`TRUNCATE` 它不会缩小 `ibdata1` 文件，空间仅在文件内部被标记为可重用，因此不会“释放最多磁盘空间”给操作系统。\n\n**考点总结:**\n此题考察对 InnoDB 表空间管理（共享表空间 `ibdata1` 与独立表空间 `innodb_file_per_table`）的理解，以及不同操作（`TRUNCATE TABLE`, `ALTER TABLE`）对磁盘空间回收的影响。关键在于区分空间是返还给操作系统还是仅在表空间内部标记为可用。",
+        "suggestion": "### 应试技巧与学习建议\n\n**应试技巧:**\n仔细观察命令行输出。`show global variables` 显示当前配置，而 `ls -l` 显示文件系统状态，可以推断历史配置。注意 `ibdata1` 的大小和各个 `.ibd` 文件的存在与否。当 `innodb_file_per_table=ON` 时，如果某个表没有对应的 `.ibd` 文件，则它很可能创建于该参数为 `OFF` 的时期，数据位于共享表空间。\n\n**学习建议:**\n深入学习 InnoDB 的存储结构，特别是 `innodb_file_per_table` 参数的作用和影响。理解共享表空间 (`ibdata1`) 和独立表空间的区别，以及它们在磁盘空间管理上的行为。掌握 `TRUNCATE TABLE`、`OPTIMIZE TABLE` 和 `ALTER TABLE ... ENGINE=InnoDB` 等操作如何回收空间，以及何时空间会真正返还给操作系统。"
+    },
+    {
+        "question": "### 试题 2:\n\nExamine the following `EXPLAIN` output:\n\n```\nEXPLAIN:\n-> Sort: <temporary>.Population DESC (actual time=8.306..8.431 rows=125 loops=1)\n    -> Stream results (actual time=0.145..8.033 rows=125 loops=1)\n        -> Nested loop inner join (cost=241.12 rows=205) (actual time=0.141..7.787 rows=125 loops=1)\n            -> Filter: (world.country.Continent = 'Asia') (cost=25.40 rows=34) (actual time=0.064..0.820 rows=51 loops=1)\n                -> Table scan on country (cost=25.40 rows=239) (actual time=0.059..0.359 rows=239 loops=1)\n            -> Filter: (world.city.Population > 1000000) (cost=4.53 rows=6) (actual time=0.030..0.131 rows=2 loops=51)\n                -> Index lookup on city using CountryCode (CountryCode=world.country.Code) (cost=4.53 rows=18) (actual time=0.023..0.096 rows=35 loops=51)\n1 row in set (0.0094 sec)\n```\n\nWhich two statements are true? ",
+        "selections": {
+            "A": "The country table is accessed as the first table, and then joined to the city table.",
+            "B": "35 rows from the city table are included in the result.",
+            "C": "The optimizer estimates that 51 rows in the country table have Continent = 'Asia'.",
+            "D": "It takes more than 8 milliseconds to sort the rows.",
+            "E": "The query returns exactly 125 rows."
+        },
+        "answers": [
+            "A",
+            "E"
+        ],
+        "summary": "### 选项分析与考点总结\n\n**选项分析:**\n\nA) 在 `Nested loop inner join` 中，`country` 表的访问（`Table scan on country`）在 `city` 表的访问（`Index lookup on city`）之上，表明 `country` 表是驱动表（外部表），先被访问，然后其结果用于连接 `city` 表 (A 正确)。\n\nB) `Index lookup on city` 显示 `actual time=... rows=35 loops=51`。这意味着对于 `country` 表中满足条件的51行，每次查找 `city` 表时，平均（或在某些迭代中）处理了35行。但最终参与 `Nested loop inner join` 且满足 `city.Population > 1000000` 条件的是 `actual time=... rows=2 loops=51`，这表明每次匹配的 `country` 行，平均有2行 `city` 记录满足条件并进入连接。最终结果集有125行，不能直接说从 city 表中取了35行进入最终结果 (B 错误)。\n\nC) 对于 `country` 表的 `Filter: (world.country.Continent = 'Asia')`，优化器估计 `rows=34`，但实际 `actual time=... rows=51 loops=1`。所以优化器估计是34行，实际是51行 (C 错误)。\n\nD) `Sort: ... (actual time=8.306..8.431 rows=125 loops=1)`。排序花费的时间是 `8.431 - 8.306 = 0.125` 毫秒，这远小于8毫秒 (D 错误)。\n\nE) `Sort: ... (actual time=... rows=125 loops=1)` 以及 `Stream results (actual time=... rows=125 loops=1)` 都表明最终返回了125行 (E 正确)。\n\n**考点总结:**\n此题考察对 `EXPLAIN` (特别是带有 `actual time` 的 `EXPLAIN ANALYZE` 格式) 输出的解读能力。需要理解嵌套循环连接的执行顺序、优化器的估算行数 (`rows`) 与实际行数 (`actual ... rows=...`) 的区别，以及各个操作的实际执行时间。",
+        "suggestion": "### 应试技巧与学习建议\n\n**应试技巧:**\n阅读 `EXPLAIN` 输出时，从上到下看操作的最终顺序，从缩进判断操作的层级关系。对于 `Nested loop join`，通常先处理的是缩进较少的那个分支（驱动表）。注意区分 `cost` 和 `rows` (估计值) 与 `actual time` 和 `actual rows` (实际值)。时间单位通常是毫秒。\n\n**学习建议:**\n熟练掌握 `EXPLAIN` 和 `EXPLAIN ANALYZE` (或通过设置 `optimizer_trace` 查看详细执行计划) 的使用。理解不同类型的连接操作 (Nested Loop, Hash Join, Merge Join)、表访问方式 (Table Scan, Index Scan, Index Lookup) 以及排序、临时表等操作在 `EXPLAIN` 中的体现。多练习分析复杂查询的执行计划。"
+    },
+    {
+        "question": "### 试题 3:\n\nChoose four. A newly deployed replication master database has a 10/90 read to write ratio. The complete dataset is currently 28G but will never fluctuate (波动) beyond +-10%. The database storage system consists of two locally attached PCI-E Enterprise grade disks (mounted as /data1 and /data2). The server is dedicated to this MySQL Instance. System memory capacity is 64G. The my.cnf file contents are displayed here:\n\n```ini\n[mysqld]\ndatadir=/data1/\ninnodb_buffer_pool_size=28G\ninnodb_log_file_size=150M\n```\n\nWhich four changes provide the most performance improvement, without sacrificing (牺牲) data integrity?",
+        "selections": {
+            "A": "innodb_doublewrite=off",
+            "B": "innodb_log_group_home_dir=/data2/",
+            "C": "innodb_log_file_size=1G",
+            "D": "innodb_undo_directory=/dev/shm",
+            "E": "log-bin=/data2/",
+            "F": "innodb_flush_log_at_trx_commit=0",
+            "G": "sync_binlog=0",
+            "H": "innodb_buffer_pool_size=32G",
+            "I": "disable-log-bin"
+        },
+        "answers": [
+            "B",
+            "C",
+            "E",
+            "H"
+        ],
+        "summary": "### 选项分析与考点总结\n\n**选项分析:**\n\nA) `innodb_doublewrite=off`: 会牺牲数据完整性，不符合题意。\n\nB) `innodb_log_group_home_dir=/data2/`: 将 InnoDB redo 日志放到与数据文件不同的磁盘 (`/data2`)，可以改善 I/O 性能，且不牺牲完整性 (B 正确)。\n\nC) `innodb_log_file_size=1G`: 150M 的 redo 日志对于 28G 的缓冲池和数据集可能偏小，增加到 1G (例如 2个512M文件或1个1G文件，取决于 `innodb_log_files_in_group`) 可以减少刷盘频率，有助于写入性能，对读取也有间接益处，不牺牲完整性 (C 正确)。\n\nD) `innodb_undo_directory=/dev/shm`: 将 undo 日志放到内存文件系统 `/dev/shm`，虽然可能提速，但在系统崩溃时 undo 日志会丢失，严重影响数据完整性和恢复能力，不符合题意。\n\nE) `log-bin=/data2/`: 将二进制日志放到与数据文件和 InnoDB redo 日志不同的磁盘（如果B也选了，则redo和binlog都在/data2，但仍优于和数据都在/data1），改善 I/O 性能，不牺牲完整性 (E 正确)。\n\nF) `innodb_flush_log_at_trx_commit=0`: 会牺牲 ACID 中的 D (Durability)，不符合题意。\n\nG) `sync_binlog=0`: 会牺牲复制的完整性和崩溃恢复时的准确性，不符合题意。\n\nH) `innodb_buffer_pool_size=32G`: 系统内存 64G，数据集约 28-31G。将缓冲池从 28G 增加到 32G (约占总内存50%，或能容纳整个数据集)，可以提高缓存命中率，对读密集型应用有益，不牺牲完整性 (H 正确)。\n\nI) `disable-log-bin`: 题目明确是复制主库，禁用二进制日志会导致复制无法进行，不符合题意。\n\n**考点总结:**\n此题考察 MySQL 性能调优，特别是在保证数据完整性前提下的配置优化。涉及 InnoDB 缓冲池大小、日志文件大小与位置、二进制日志位置以及关键的完整性相关参数（`innodb_doublewrite`, `innodb_flush_log_at_trx_commit`, `sync_binlog`）。重点在于I/O分离和内存的合理分配。",
+        "suggestion": "### 应试技巧与学习建议\n\n**应试技巧:**\n首先排除牺牲数据完整性的选项（如A, D, F, G, I）。然后根据“性能改进”选择。考虑I/O瓶颈（将不同类型日志和数据分到不同物理磁盘）、内存利用（增加缓冲池）和日志调优（合理的日志大小）。题目中明确有 `/data1` 和 `/data2` 两个挂载点，这是I/O分离的重要提示。\n\n**学习建议:**\n深入理解 `my.cnf` 中各项参数的含义及其对性能和数据完整性的影响。特别是 InnoDB 相关的参数 (`innodb_buffer_pool_size`, `innodb_log_file_size`, `innodb_log_group_home_dir`, `innodb_flush_log_at_trx_commit`, `innodb_doublewrite`) 和复制相关的参数 (`log-bin`, `sync_binlog`)。了解磁盘I/O、内存管理对数据库性能的基础影响。"
+    },
+    {
+        "question": "### 试题 4:\n\nWhich two actions will secure a MySQL server from network-based attacks?",
+        "selections": {
+            "A": "Use MySQL Router to proxy connections to the MySQL server.",
+            "B": "Place the MySQL instance behind a firewall.",
+            "C": "Use network file system (NFS) for storing data.",
+            "D": "Change the listening port to 3307.",
+            "E": "Allow connections from the application server only."
+        },
+        "answers": [
+            "B",
+            "E"
+        ],
+        "summary": "### 选项分析与考点总结\n\n**选项分析:**\n\nA) MySQL Router 主要用于高可用和负载均衡（如InnoDB Cluster），本身不直接作为网络攻击的主要防御手段，尽管它可以间接参与安全架构。\n\nB) 将 MySQL 实例置于防火墙之后，并配置防火墙规则限制访问来源，是标准的网络安全措施，能有效抵御未授权的网络访问 (B 正确)。\n\nC) 使用 NFS 存储数据与防御网络攻击 MySQL 服务本身关系不大，反而可能引入额外的安全风险和性能问题。\n\nD) 更改监听端口（如从默认的3306改为3307）是一种“安全靠隐晦”(security through obscurity)的做法，容易被端口扫描发现，不能提供实质性的安全防护。\n\nE) 仅允许来自特定应用服务器的连接，是一种基于白名单的网络访问控制，大大减少了攻击面，是有效的安全措施 (E 正确)。这通常通过防火墙规则或MySQL的用户账户权限（例如 `CREATE USER 'app_user'@'app_server_ip' ...`）来实现。\n\n**考点总结:**\n此题考察 MySQL 服务器的网络安全防护措施。核心原则是最小化攻击面和实施访问控制。防火墙和限制连接来源是关键的网络层面安全措施。",
+        "suggestion": "### 应试技巧与学习建议\n\n**应试技巧:**\n考虑哪些措施能真正阻止或限制未经授权的网络连接。区分主动防御（如防火墙、IP白名单）和效果有限的策略（如改端口）。思考“纵深防御”的理念。\n\n**学习建议:**\n学习 MySQL 安全的最佳实践，包括网络层安全（防火墙、`bind-address`、限制用户来源IP）、传输层安全（SSL/TLS加密连接）、认证与授权（强密码策略、最小权限原则、角色管理）、以及防范SQL注入等应用层安全。了解 MySQL Enterprise Firewall 等高级安全特性。"
+    },
+    {
+        "question": "### 试题 5:\n\nChoose four. You must store connection parameters for connecting a Linux-based MySQL client to a remote Windows-based MySQL server listening on port 3309. Which four methods can be used to configure user, host, and database parameters?",
+        "selections": {
+            "A": "Embed login information into the SSH tunnel definition.",
+            "B": "Execute mysql_config_editor to configure the user connection.",
+            "C": "Configure ~/.my.cnf.",
+            "D": "Execute the mysqladmin command to configure the user connection.",
+            "E": "Execute the command in a bash script.",
+            "F": "Configure environment variables.",
+            "G": "Define a UNIX socket.",
+            "H": "Use the usermod program to store static user information.",
+            "I": "Configure ~/.ssh/config for public key authentication."
+        },
+        "answers": [
+            "B",
+            "C",
+            "E",
+            "F"
+        ],
+        "summary": "### 选项分析与考点总结\n\n**选项分析:**\n\nA) SSH隧道用于安全地转发连接，但其本身的定义（如在~/.ssh/config中）不直接存储MySQL客户端的用户名/密码等参数供mysql客户端程序使用，而是建立一个转发端口。mysql客户端仍需连接到本地转发端口，并提供认证信息。\n\nB) `mysql_config_editor set --login-path=... --host=... --user=... --password` 命令可以将连接参数（包括密码）加密存储在 `~/.mylogin.cnf` 文件中，mysql客户端可以使用 `--login-path` 选项读取这些参数 (B 正确)。\n\nC) 在用户的 `~/.my.cnf` (或系统级的 `my.cnf`) 文件中，可以在 `[client]` 或自定义的程序块中配置 `user`, `password`, `host`, `port`, `database` 等参数 (C 正确)。\n\nD) `mysqladmin` 是一个管理工具，用于执行如ping服务器、查看状态、创建/删除数据库等管理操作，不用于存储客户端连接参数。\n\nE) 在bash脚本中，可以直接在 `mysql` 命令后面跟上 `-u user -p'password' -h host -P 3309 dbname` 等参数来执行命令 (E 正确)。\n\nF) MySQL客户端会检查特定的环境变量，如 `MYSQL_USER`, `MYSQL_PWD`, `MYSQL_HOST`, `MYSQL_TCP_PORT`, `MYSQL_DATABASE` (虽然 `MYSQL_DATABASE` 不是标准客户端选项，但可以通过脚本等方式使用) (F 正确)。注意：`MYSQL_PWD` 有安全风险。\n\nG) UNIX套接字用于本地连接，题目中明确指出是连接到远程Windows服务器，因此不适用。\n\nH) `usermod`是Linux系统管理用户账户的命令，与MySQL客户端连接参数无关。\n\nI) `~/.ssh/config` 用于配置SSH连接参数，如通过SSH隧道连接，但这不直接是MySQL客户端参数的存储方式。\n\n**考点总结:**\n此题考察MySQL客户端连接参数的多种配置方法。主要包括命令行参数、选项文件（my.cnf）、加密的选项文件（.mylogin.cnf via mysql_config_editor）和环境变量。\n\n**答案说明:** 官方文档中，`MYSQL_DATABASE` 环境变量不是标准MySQL客户端（如`mysql`命令行工具）直接识别的环境变量来指定默认数据库。但脚本可以读取它。如果题目严格指`mysql`客户端，则F可能依赖于具体哪些环境变量被认为是“参数”。然而，在更广泛的“配置参数”意义上，环境变量是一种常用方法。 `MYSQL_TCP_PORT` 是一个有效的环境变量。鉴于需要选四个，BCEF 是最合理的组合。",
+        "suggestion": "### 应试技巧与学习建议\n\n**应试技巧:**\n区分MySQL服务器端配置、客户端配置和操作系统配置。考虑参数的传递方式：命令行、文件、环境变量。注意安全 implications，例如在脚本或环境变量中明文存储密码。\n\n**学习建议:**\n熟悉MySQL客户端程序（`mysql`, `mysqldump`, `mysqladmin`等）的常用选项。掌握选项文件的结构和优先级 (`/etc/my.cnf`, `~/.my.cnf`, etc.)。学习 `mysql_config_editor` 的使用方法和优点。了解MySQL客户端可以识别哪些环境变量。"
+    },
+    {
+        "question": "### 试题 6:\n\nChoose two. Examine this statement, which executes successfully:\n\n```sql\nCREATE TABLE employees (\n  emp_no int unsigned NOT NULL,\n  birth_date date NOT NULL,\n  first_name varchar(14) NOT NULL,\n  last_name varchar(16) NOT NULL,\n  hire_date date NOT NULL,\n  PRIMARY KEY (emp_no)\n) ENGINE=InnoDB;\n```\n\nNow examine this query: `SELECT emp_no, first_name, last_name, birth_date FROM employees WHERE MONTH(birth_date) = 4;`\n\nYou must add an index that can reduce the number of rows processed by the query. Which two statements can do this?",
+        "selections": {
+            "A": "ALTER TABLE employees ADD INDEX ((CAST(birth_date ->>'$.month' AS unsigned)));",
+            "B": "ALTER TABLE employees ADD INDEX (birth_date DESC);",
+            "C": "ALTER TABLE employees ADD COLUMN birth_month tinyint unsigned GENERATED ALWAYS AS (MONTH(birth_date)) VIRTUAL NOT NULL, ADD INDEX (birth_month);",
+            "D": "ALTER TABLE employees ADD INDEX (birth_date);",
+            "E": "ALTER TABLE employees ADD COLUMN birth_month tinyint unsigned GENERATED ALWAYS AS (birth_date ->>'$.month') VIRTUAL NOT NULL, ADD INDEX (birth_month);",
+            "F": "ALTER TABLE employees ADD INDEX ((MONTH(birth_date)));"
+        },
+        "answers": [
+            "C",
+            "F"
+        ],
+        "summary": "### 选项分析与考点总结\n\n**选项分析:**\n查询条件是 `WHERE MONTH(birth_date) = 4`。为了优化这个查询，我们需要一个能够直接利用 `MONTH(birth_date)` 结果的索引。\n\nA) `birth_date ->>'$.month'` 是JSON操作符，不适用于`DATE`类型的 `birth_date` 列。\n\nB) 和 D) 在 `birth_date` 列上创建索引，无论是升序还是降序，都无法直接优化 `MONTH(birth_date)` 这个函数表达式。MySQL优化器通常不会使用普通列索引来加速对该列应用函数后的条件判断，除非进行全索引扫描。\n\nC) 创建一个虚拟生成列 `birth_month`，其值是 `MONTH(birth_date)`，然后在这个生成列上创建索引。查询时，如果查询条件与生成列的定义匹配（或者优化器能够转换），就可以使用这个索引 (C 正确)。\n\nE) 类似A，使用了不适用于 `DATE` 类型的JSON操作符 `->>` 来定义生成列。\n\nF) 直接在表达式 `(MONTH(birth_date))` 上创建索引（函数索引或表达式索引）。从MySQL 8.0.13开始支持这种语法。这允许优化器直接使用这个索引来满足 `WHERE MONTH(birth_date) = 4` 条件 (F 正确)。\n\n**考点总结:**\n此题考察对函数或表达式结果进行索引优化的方法。主要有两种方式：1. 创建生成列（Generated Column），其值基于表达式，然后对生成列创建索引。2. 直接在表达式上创建索引（Functional/Expression Indexes，MySQL 8.0+）。\n\n**答案说明:** C和F都是有效的解决方案。C是MySQL 5.7引入生成列后的常用方法，F是MySQL 8.0引入的更直接的方法。题目未指定MySQL版本，但两者都是现代MySQL中优化此类查询的正确途径。",
+        "suggestion": "### 应试技巧与学习建议\n\n**应试技巧:**\n当 `WHERE` 子句中对列使用了函数时，标准的B-Tree索引在该列上通常无效。寻找能够使索引直接匹配函数结果的选项。注意MySQL版本特性，如生成列和表达式索引。\n\n**学习建议:**\n学习MySQL的索引类型和使用场景。重点掌握生成列（Stored 和 Virtual）的创建和用途，以及如何为它们创建索引。如果备考MySQL 8.0，务必学习表达式索引的语法和优势。理解为什么 `WHERE FUNC(column) = value` 不能有效利用 `column` 上的普通索引。"
+    },
+    {
+        "question": "### 试题 7:\n\nChoose two. Which two queries are examples of successful SQL injection attacks?",
+        "selections": {
+            "A": "SELECT user, passwd FROM members WHERE user = ' ? ' ; INSERT INTO members ('user', 'passwd') VALUES ('bob@example.com', 'secret');--';",
+            "B": "SELECT user, phone FROM customers WHERE name = '\\'; DROP TABLE users; -- ';",
+            "C": "SELECT id, name FROM user WHERE user.id= (SELECT members.id FROM members);",
+            "D": "SELECT id, name FROM user WHERE id=23 OR id=32 OR 1=1;",
+            "E": "SELECT id, name FROM user WHERE id=23 OR id=32 AND 1=1;",
+            "F": "SELECT email, passwd FROM members WHERE email = 'INSERT INTO members('email', 'passwd') VALUES ('bob@example.com', 'secret') ;-- ';"
+        },
+        "answers": [
+            "A",
+            "B"
+        ],
+        "summary": "### 选项分析与考点总结\n\n**选项分析:**\nSQL注入攻击的核心是攻击者能够将恶意SQL代码片段插入到应用程序的SQL查询中，从而改变原始查询的逻辑或执行额外的恶意操作。\n\nA) 假设 `?` 是用户输入点。如果用户输入 `' ; INSERT INTO members ('user', 'passwd') VALUES ('bob@example.com', 'secret');--`，那么原始查询的 `user = '... '` 中的第一个单引号会被用户输入的单引号闭合，然后 `;` 开始一个新的 `INSERT` 语句。`--` 会注释掉原始查询可能存在的后续部分。这是一个典型的SQL注入，执行了额外的 `INSERT` 操作 (A 正确)。\n\nB) 用户输入 `'; DROP TABLE users; -- `。`'` 用于转义并闭合前一个单引号（或者根据上下文直接闭合），然后 `;` 结束当前语句，`DROP TABLE users;` 是注入的恶意命令。`--` 注释掉后续内容。这是一个成功删除表的SQL注入 (B 正确)。\n\nC) 这是一个合法的SQL查询，使用了子查询。它本身不是SQL注入攻击的例子，除非子查询的内容是用户可控并被恶意构造的，但查询本身结构是合法的。\n\nD) 和 E) `OR 1=1` 或 `AND 1=1` 是SQL注入中常用的技巧，用于绕过认证或获取更多数据（例如，如果 `id=23 OR id=32` 是用户输入的一部分，而攻击者注入了 `OR 1=1`）。但语句本身作为完整查询，只是一个逻辑表达式，不一定代表一个“攻击”，它只是一个恒真或部分恒真的条件。题目问的是“成功的SQL注入攻击”，A和B更清晰地展示了恶意代码的执行。\n\nF) 如果整个 `'INSERT INTO ... ;-- '` 字符串被视为 `email` 的值，那么它只是一个普通的字符串比较，不是SQL注入。如果注入点是 `email = '` 之后，用户输入了 `anything_here_to_close_the_quote'; INSERT INTO ... ;-- `，那才是注入。从选项的写法看，似乎整个 `INSERT` 语句是作为 `email` 字符串的值，这通常不会构成注入，除非数据库或驱动有非常特殊的解析行为。A和B的结构更符合典型SQL注入的模式。\n\n**考点总结:**\n此题考察对SQL注入攻击原理和常见形式的识别。关键在于识别如何通过用户输入来闭合当前的SQL语句片段（如字符串字面量），并引入新的SQL命令或修改原始查询逻辑。分号 (`;`) 用于分隔多个SQL语句，注释符 (`--` 或 `/* ... */`) 用于忽略原始查询的剩余部分。\n\n**答案说明:** A和B清晰地展示了通过终止原语句并引入新恶意语句的注入方式。F的描述有点模糊，如果假设单引号未闭合，且用户输入 `INSERT INTO ... ;-- ` 作为 `email` 值的一部分，那么它缺少一个前导单引号来闭合原始的 `email = '` 语句，因此按其字面形式，它更像是一个包含SQL语句的字符串，而不是一个已成功执行的注入攻击。",
+        "suggestion": "### 应试技巧与学习建议\n\n**应试技巧:**\n寻找那些能够改变原始SQL查询结构、执行额外命令或绕过逻辑判断的选项。注意单引号、分号、注释符等特殊字符在SQL注入中的作用。问题问的是“成功的SQL注入攻击”，所以要选那些能实际执行恶意代码的例子。\n\n**学习建议:**\n深入理解SQL注入的各种类型（基于错误的、联合查询的、盲注、时间延迟的、堆叠查询的等）。学习如何防范SQL注入，主要是使用参数化查询（预编译语句）和严格的输入验证/清理。了解不同数据库系统对SQL注入的敏感度和特定技巧。"
+    },
+    {
+        "question": "### 试题 8:\n\nChoose two. Which two tools are available to monitor the global status of InnoDB locking?",
+        "selections": {
+            "A": "SHOW ENGINE INNODB STATUS;",
+            "B": "SHOW TABLE STATUS;",
+            "C": "INFORMATION_SCHEMA.INNODB_TABLESTATS;",
+            "D": "SHOW STATUS;",
+            "E": "INFORMATION_SCHEMA.STATISTICS",
+            "F": "INFORMATION_SCHEMA.INNODB_METRICS"
+        },
+        "answers": [
+            "A",
+            "F"
+        ],
+        "summary": "### 选项分析与考点总结\n\n**选项分析:**\n\nA) `SHOW ENGINE INNODB STATUS;` 是监控InnoDB内部状态（包括锁、事务、缓冲池、日志等）非常重要的命令。其输出的 `LATEST DETECTED DEADLOCK` 和 `TRANSACTIONS` 部分包含了大量的锁信息 (A 正确)。\n\nB) `SHOW TABLE STATUS;` 提供关于表的一般信息，如引擎、行数、数据大小等，不直接显示当前的锁状态。\n\nC) `INFORMATION_SCHEMA.INNODB_TABLESTATS` (MySQL 5.6+) 或 `mysql.innodb_table_stats` (更早版本) 存储的是持久化的InnoDB表和索引的统计信息，用于查询优化，不是实时锁信息。\n\nD) `SHOW STATUS;` (或 `SHOW GLOBAL STATUS;`) 显示服务器级别的状态变量，其中一些可能与锁相关（如 `Innodb_row_lock_waits`, `Table_locks_waited`），但它不提供详细的InnoDB锁信息，如哪些事务持有锁，哪些在等待锁。\n\nE) `INFORMATION_SCHEMA.STATISTICS` 提供关于表索引的统计信息，用于查询优化，不显示锁信息。\n\nF) `INFORMATION_SCHEMA.INNODB_METRICS` 表提供了一系列InnoDB性能计数器。可以通过查询此表来获取关于锁的聚合统计信息，例如 `lock_deadlocks`, `lock_timeouts`, `lock_wait_secs` 等，这些可以反映InnoDB锁的全局状况 (F 正确)。\n\n在现代MySQL版本（如8.0+）中，`performance_schema` 下的表如 `data_locks` 和 `data_lock_waits` 提供了更详细和实时的锁信息。但题目选项未包含这些。在题目给出的选项中，A和F是监控InnoDB锁状态最相关的工具。\n\n**考点总结:**\n此题考察监控InnoDB锁状态的工具。`SHOW ENGINE INNODB STATUS` 是传统的综合性诊断工具。`INFORMATION_SCHEMA.INNODB_METRICS` 提供了更细粒度的性能计数器。了解不同监控工具的适用范围和提供的信息类型是关键。",
+        "suggestion": "### 应试技巧与学习建议\n\n**应试技巧:**\n区分提供实时详细锁信息（如 `SHOW ENGINE INNODB STATUS`中的事务和锁部分）、提供聚合锁统计（如 `INNODB_METRICS` 或某些 `SHOW STATUS` 变量）和提供其他元数据/统计信息（如 `SHOW TABLE STATUS`, `I_S.STATISTICS`）的工具。选择最能反映“全局锁状态”的选项。\n\n**学习建议:**\n熟练掌握 `SHOW ENGINE INNODB STATUS` 命令的输出解读。学习使用 `INFORMATION_SCHEMA` 中的InnoDB相关表，特别是 `INNODB_TRX`, `INNODB_LOCKS`, `INNODB_LOCK_WAITS` (在8.0中被performance_schema替代但可能仍被考察概念) 以及 `INNODB_METRICS`。对于MySQL 8.0及以上版本，重点学习 `Performance Schema` 中与锁相关的表，如 `performance_schema.data_locks` 和 `performance_schema.data_lock_waits`。"
+    },
+    {
+        "question": "### 试题 9:\n\nChoose two. Which two authentication plugins require the plain text client plugin (`mysql_clear_password`) for authentication to work?",
+        "selections": {
+            "A": "LDAP authentication",
+            "B": "SHA256 authentication",
+            "C": "Windows Native authentication",
+            "D": "PAM authentication",
+            "E": "MySQL Native Password",
+            "F": "LDAP SASL authentication"
+        },
+        "answers": [
+            "A",
+            "D"
+        ],
+        "summary": "### 选项分析与考点总结\n\n**选项分析:**\n客户端插件 `mysql_clear_password` 用于在客户端和服务器之间以明文形式传输密码。这通常是当服务器端认证插件需要接收实际密码以进行验证时（例如，将其传递给外部认证系统如LDAP或PAM）。\n\nA) LDAP认证插件：如果配置为简单的LDAP绑定（Simple Bind），服务器端的LDAP插件通常需要从客户端接收明文密码，然后用该密码向LDAP服务器进行认证。因此，客户端需要使用 `mysql_clear_password` (A 正确)。\n\nB) `sha256_password` 认证插件使用基于SHA256的密码哈希和加盐机制，密码不在网络上明文传输，不需要 `mysql_clear_password`。\n\nC) Windows Native Authentication 使用Windows操作系统的认证机制（如SSPI），不依赖于明文密码传输。\n\nD) PAM (Pluggable Authentication Modules) 认证插件：PAM的配置非常灵活。如果配置的PAM服务栈需要明文密码进行验证（例如，传递给 `pam_unix.so` 进行本地密码验证，或某些其他需要密码的模块），则MySQL服务器端的PAM插件会要求客户端发送明文密码，客户端因此需要使用 `mysql_clear_password` (D 正确)。\n\nE) `mysql_native_password` 认证插件使用基于挑战-应答的机制，密码经过哈希处理，不在网络上明文传输，不需要 `mysql_clear_password`。\n\nF) LDAP SASL (Simple Authentication and Security Layer) 认证：SASL支持多种认证机制。例如，使用Kerberos (GSSAPI) 的SASL机制就不需要明文密码。虽然某些简单的SASL机制可能需要，但通常SASL旨在提供更强的认证方法，避免明文密码。相对于A（简单LDAP绑定），F的场景更复杂，不一定强制需要明文密码。\n\n**考点总结:**\n此题考察MySQL的认证插件机制，特别是哪些插件需要客户端以明文形式发送密码。关键在于理解不同认证插件的工作原理以及它们如何与外部认证系统交互。使用 `mysql_clear_password` 插件时，必须配合SSL/TLS加密连接以保护密码安全。\n\n**答案说明:** 基于MySQL官方文档，用于简单绑定（Simple Bind）的LDAP认证插件和某些配置下的PAM认证插件是需要客户端发送明文密码的典型例子。",
+        "suggestion": "### 应试技巧与学习建议\n\n**应试技巧:**\n思考哪些认证机制本质上需要服务器端接收到用户的原始密码才能工作。通常，当MySQL将认证委托给外部系统，并且该外部系统需要密码时，就可能需要明文密码。注意区分密码在本地的存储方式（哈希）和在网络上传输的方式。\n\n**学习建议:**\n了解MySQL支持的各种认证插件，如 `mysql_native_password`, `sha256_password`, `caching_sha2_password` (MySQL 8.0默认), LDAP认证插件, PAM认证插件, Windows Native Authentication等。理解它们各自的认证流程和安全特性。特别注意何时需要客户端插件 `mysql_clear_password`，以及使用它时的安全前提（必须启用SSL/TLS加密连接）。"
+    },
+    {
+        "question": "### 试题 10:\n\nWhich three are types of information stored in the MySQL data dictionary?",
+        "selections": {
+            "A": "InnoDB buffer pool LRU management data",
+            "B": "performance metrics",
+            "C": "access control lists",
+            "D": "server runtime configuration",
+            "E": "server configuration rollback",
+            "F": "view definitions",
+            "G": "stored procedure definitions"
+        },
+        "answers": [
+            "C",
+            "F",
+            "G"
+        ],
+        "summary": "### 选项分析与考点总结\n\n**选项分析:**\nMySQL 数据字典 (Data Dictionary) 是一个集中的事务性存储库，用于存储关于数据库对象的元数据。有效的选项包括：\nC) 访问控制列表（Access control lists）：用户账户、权限和角色信息存储在数据字典中。\nF) 视图定义（View definitions）：视图的SQL定义存储在数据字典中。\nG) 存储过程定义（Stored procedure definitions）：存储过程、函数和触发器的定义也存储在数据字典中。\n\n无效的选项：\nA) InnoDB缓冲池LRU管理数据：这是InnoDB内部内存管理的数据，不属于数据字典的元数据范畴。\nB) 性能指标（Performance metrics）：性能指标通常由Performance Schema或状态变量提供，而非直接存储于数据字典的核心对象定义中。\nD) 服务器运行时配置（Server runtime configuration）：运行时配置通过系统变量管理，部分持久化配置可能影响数据字典的结构，但配置值本身不是数据字典存储的核心对象元数据。\nE) 服务器配置回滚（Server configuration rollback）：这不是数据字典存储的信息类型。\n\n**考点总结:**\n此题考察对 MySQL 8.0 引入的数据字典所存储内容的理解。数据字典取代了旧的基于FRM文件和系统表的元数据存储方式，集中存储了数据库对象的定义、结构、权限等信息。",
+        "suggestion": "### 应试技巧与学习建议\n\n**应试技巧:**\n理解“元数据”的含义——即关于数据的数据。数据字典存储的是描述数据库结构和管理的信息，而不是运行时状态或性能数据本身。排除那些描述服务器内部操作细节或瞬时状态的选项。\n\n**学习建议:**\n学习 MySQL 8.0 数据字典的架构和功能。了解它存储了哪些类型的数据库对象信息，例如表定义、索引、视图、存储过程、触发器、用户账户和权限等。区分数据字典与 Performance Schema、Information Schema 以及系统变量的角色。"
+    },
+    {
+        "question": "### 试题 11:\n\n(Choose four.) Which four are types of information stored in the MySQL data dictionary?",
+        "selections": {
+            "A": "performance metrics",
+            "B": "table definitions",
+            "C": "access control lists",
+            "D": "view definitions",
+            "E": "server runtime configuration",
+            "F": "server configuration rollback",
+            "G": "stored procedure definitions",
+            "H": "InnoDB buffer pool LRU management data"
+        },
+        "answers": [
+            "B",
+            "C",
+            "D",
+            "G"
+        ],
+        "summary": "### 选项分析与考点总结\n\n**选项分析:**\n与试题10类似，此题要求选出四项存储在MySQL数据字典中的信息类型。\nB) 表定义（Table definitions）：包括表结构、列、索引、约束等元数据。\nC) 访问控制列表（Access control lists）：用户、角色及其权限。\nD) 视图定义（View definitions）：视图的创建语句和结构。\nG) 存储过程定义（Stored procedure definitions）：存储过程、函数等的代码和元数据。\n\n无效选项的理由同试题10。\n\n**考点总结:**\n再次强调MySQL数据字典作为元数据中心的角色。它存储了数据库对象的静态定义信息，是数据库运行的基础。理解哪些属于描述数据库结构和管理的信息至关重要。",
+        "suggestion": "### 应试技巧与学习建议\n\n**应试技巧:**\n仔细阅读题目要求（选择四项）。基于对数据字典核心功能的理解，筛选出描述数据库对象定义和权限管理的选项。通常，动态的、运行时的数据（如性能指标、LRU数据）不属于数据字典的核心存储内容。\n\n**学习建议:**\n复习数据字典包含的关键元数据类别。可以参考MySQL官方文档中关于数据字典的章节，明确其存储范围。与旧版本（<8.0）的元数据存储方式（如.frm文件、mysql数据库中的系统表）进行对比，有助于理解数据字典的统一性和重要性。"
+    },
+    {
+        "question": "### 试题 12:\n\nChoose two. Examine this SQL statement:\n```sql\nmysql> GRANT r_read@localhost TO mark WITH ADMIN OPTION;\n```\nWhich two are true?",
+        "selections": {
+            "A": "Mark can grant the privileges assigned to the r_read@localhost role to another user.",
+            "B": "Mark can grant the r_read@localhost role to another user.",
+            "C": "ADMIN OPTION causes the role to be activated by default.",
+            "D": "Mark must connect from localhost to activate the r_read@localhost role.",
+            "E": "Mark can revoke the r_read@localhost role from another user.",
+            "F": "ADMIN OPTION allows Mark to drop the role."
+        },
+        "answers": [
+            "B",
+            "E"
+        ],
+        "summary": "### 选项分析与考点总结\n\n**选项分析:**\n`GRANT role TO user WITH ADMIN OPTION` 授予用户 `user`（这里是 `mark`）一个角色 `role`（这里是 `r_read@localhost`），并且赋予该用户管理此角色的权限。具体来说，`WITH ADMIN OPTION` 允许 `mark`：\n1.  将 `r_read@localhost` 这个角色授予其他用户。\n2.  从其他用户那里撤销 `r_read@localhost` 这个角色。\n\nB) Mark可以将 `r_read@localhost` 角色授予其他用户。这是 `WITH ADMIN OPTION` 的主要功能之一 (B 正确)。\nE) Mark可以从其他用户那里撤销 `r_read@localhost` 角色。这也是 `WITH ADMIN OPTION` 的功能 (E 正确，假设“from another role”是“from another user”的笔误，这在实际权限中是标准行为)。\n\n错误选项分析：\nA) `WITH ADMIN OPTION` 不直接允许 `mark` 将角色内含的 *具体权限* 授予其他用户。要授予具体权限，`mark` 需要对那些权限拥有 `GRANT OPTION`。\nC) `ADMIN OPTION` 与角色的默认激活无关。角色的默认激活通过 `SET DEFAULT ROLE` 命令设置。\nD) 角色名中的 `@localhost` 指定了角色的作用域（即该角色定义在localhost上），与 `mark` 激活角色时必须从何处连接无关。\nF) `ADMIN OPTION` 不允许 `mark` 删除（DROP）该角色。删除角色需要 `DROP ROLE` 权限。\n\n**考点总结:**\n此题考察MySQL中角色的管理权限，特别是 `WITH ADMIN OPTION` 子句的作用。它与权限的 `WITH GRANT OPTION` 不同，前者针对角色本身的授予和撤销，后者针对权限的授予。",
+        "suggestion": "### 应试技巧与学习建议\n\n**应试技巧:**\n清晰地区分 `WITH ADMIN OPTION` 和 `WITH GRANT OPTION`。`WITH ADMIN OPTION` 是与角色相关的，允许被授权者将该角色传递给他人或从他人处收回。它不直接传递角色内部权限的授予权。\n\n**学习建议:**\n深入学习MySQL角色管理，包括创建角色、授予权限给角色、将角色授予用户、激活角色、设置默认角色以及 `WITH ADMIN OPTION` 的具体含义和使用场景。对比其与传统直接授予权限给用户并使用 `WITH GRANT OPTION` 的异同。"
+    },
+    {
+        "question": "### 试题 13:\n\nChoose two. Which two statements are true about general tablespaces?",
+        "selections": {
+            "A": "General tablespaces support temporary tables.",
+            "B": "Dropping a table from a general tablespace releases the space back to the operating system.",
+            "C": "A new table can be created explicitly in a general tablespace.",
+            "D": "An existing table can be moved into a general tablespace.",
+            "E": "A general tablespace can have multiple data files."
+        },
+        "answers": [
+            "C",
+            "D"
+        ],
+        "summary": "### 选项分析与考点总结\n\n**选项分析:**\n通用表空间 (General Tablespaces) 是MySQL InnoDB存储引擎提供的一种共享表空间，可以存储多个表的数据。\nC) 新表可以显式地在通用表空间中创建。使用 `CREATE TABLE ... TABLESPACE = general_tablespace_name;` 语法 (C 正确)。\nD) 现有表可以移入通用表空间。使用 `ALTER TABLE ... TABLESPACE = general_tablespace_name;` 语法 (D 正确)。\n\n错误选项分析：\nA) 通用表空间不支持存储临时表。临时表有其特定的存储机制。\nB) 从通用表空间删除表（`DROP TABLE`）时，空间在表空间内部被标记为可用，但通常不会立即或轻易地将该空间释放回操作系统。要收缩通用表空间文件（`.ibd`文件）通常很困难，类似于系统表空间。\nE) 每个通用表空间由单个数据文件（`.ibd` 文件）组成，创建时指定文件名，不能有多个数据文件。\n\n**考点总结:**\n此题考察对InnoDB通用表空间的特性和限制的理解。关键点包括表在其中的创建和移动方式、空间管理以及与独立表空间（file-per-table）和系统表空间的区别。",
+        "suggestion": "### 应试技巧与学习建议\n\n**应试技巧:**\n记住通用表空间的核心特性：可以容纳多个表，但本身是单个文件。表可以被创建或移动到其中。空间回收通常是内部的，不直接返回给OS。与 `innodb_file_per_table` 的独立表空间行为进行对比。\n\n**学习建议:**\n学习InnoDB的各种表空间类型：系统表空间、独立表空间（file-per-table）、通用表空间、undo表空间、临时表空间。理解它们各自的优缺点、适用场景和管理方式。特别是通用表空间的创建、使用和限制。"
+    },
+    {
+        "question": "### 试题 14:\n\nscale up 垂直扩展 在现有服务器中增加硬件资源,以提高性能和处理能力。\n\n Which three methods are part of a 'scale up' approach to capacity planning?",
+        "selections": {
+            "A": "adding additional MySQL servers to the existing host",
+            "B": "adding more CPU power",
+            "C": "adding a replication slave",
+            "D": "adding more RAM",
+            "E": "adding more storage to your disk array",
+            "F": "sharding the server into a parallel server farm",
+            "G": "adding a new node to InnoDB Cluster"
+        },
+        "answers": [
+            "B",
+            "D",
+            "E"
+        ],
+        "summary": "### 选项分析与考点总结\n\n**选项分析:**\n“Scale up”（垂直扩展）指的是通过增强现有单个服务器的硬件资源来提升其性能和容量。\nB) 增加更多CPU处理能力（例如，升级到更多核心或更高频率的CPU）是典型的垂直扩展 (B 正确)。\nD) 增加更多RAM（内存）可以提高缓存命中率，减少磁盘I/O，是垂直扩展 (D 正确)。\nE) 增加更多存储空间到磁盘阵列，或使用更快的存储设备（如SSD替换HDD）是垂直扩展 (E 正确)。\n\n错误选项分析（这些通常属于“Scale out”或水平扩展）：\nA) 在现有主机上添加额外的MySQL服务器实例，更像是资源分割或虚拟化，不完全是传统意义上的对单一服务实例的垂直扩展。\nC) 添加复制从库主要用于读写分离、负载均衡或高可用性，属于水平扩展策略。\nF) 将服务器分片到并行服务器集群（Sharding）是典型的水平扩展数据库架构。\nG) 向InnoDB集群添加新节点也是水平扩展，通过增加更多服务器来分散负载和提高可用性。\n\n**考点总结:**\n此题考察对两种主要容量规划策略的区分：垂直扩展（Scale Up）和水平扩展（Scale Out）。垂直扩展关注增强单机能力，水平扩展关注通过增加机器数量来扩展系统能力。",
+        "suggestion": "### 应试技巧与学习建议\n\n**应试技巧:**\n理解垂直扩展的核心是“使现有的更强大”，而水平扩展是“增加更多相同的单元”。根据这个原则判断选项属于哪种扩展方式。\n\n**学习建议:**\n学习数据库架构中的不同扩展策略。了解垂直扩展的优点（如管理相对简单）和缺点（如单点故障风险、硬件升级成本和上限）。同时了解水平扩展的优缺点及其常见的实现方式（如复制、分片、集群）。"
+    },
+    {
+        "question": "### 试题 15:\n\nChoose three. A user wants to connect without entering his or her username and password on the Linux command prompt. Which three locations can be used to store the user's mysql credentials to satisfy this requirement?",
+        "selections": {
+            "A": "$HOME/.mysqlrc file",
+            "B": "/etc/my.cnf file",
+            "C": "DATADIR/mysqld-auto.cnf file",
+            "D": "$HOME/.my.cnf file",
+            "E": "$HOME/.mylogin.cnf file",
+            "F": "$MYSQL_HOME/my.cnf file",
+            "G": "$HOME/.mysql/auth/login file"
+        },
+        "answers": [
+            "B",
+            "D",
+            "E"
+        ],
+        "summary": "### 选项分析与考点总结\n\n**选项分析:**\n为了让MySQL客户端（如 `mysql` 命令行工具）在连接时自动读取凭据而无需在命令行输入，可以使用以下配置文件：\nB) `/etc/my.cnf`：这是系统级的MySQL配置文件。可以在其中的 `[client]` 部分定义用户名和密码。所有用户均可使用，但通常用于定义通用客户端选项，密码存放于此需注意安全。\nD) `$HOME/.my.cnf`：这是用户家目录下的个人MySQL配置文件。同样可以在 `[client]` 部分定义用户名和密码，仅对该用户生效。\nE) `$HOME/.mylogin.cnf`：这是由 `mysql_config_editor` 工具创建和管理的加密凭据文件。它以安全的方式存储登录路径（包含主机、用户、密码等），客户端可以通过 `--login-path` 选项使用。\n\n错误选项分析：\nA) `$HOME/.mysqlrc`：通常用于存储 `mysql` 客户端启动时执行的命令别名或设置，而不是标准的凭据存储位置。\nC) `DATADIR/mysqld-auto.cnf`：这是MySQL服务器在数据目录下自动生成的配置文件，主要用于持久化 `SET PERSIST` 命令设置的系统变量，与客户端凭据无关。\nF) `$MYSQL_HOME/my.cnf`：`$MYSQL_HOME` 通常指向MySQL的安装目录，该路径下的 `my.cnf` 更多是服务器端或特定安装的配置，不如 `/etc/my.cnf` 或 `$HOME/.my.cnf` 通用作为客户端凭据存储。\nG) `$HOME/.mysql/auth/login`：这不是一个标准的MySQL客户端凭据文件位置。\n\n**考点总结:**\n此题考察MySQL客户端凭据的存储方式，特别是如何通过配置文件避免在命令行明文输入密码。重点是 `my.cnf` 文件的层级和 `mysql_config_editor` 的使用。",
+        "suggestion": "### 应试技巧与学习建议\n\n**应试技巧:**\n区分服务器配置文件和客户端配置文件。记住 `my.cnf` 可以在多个位置存在（系统级、用户级），并且客户端会按特定顺序读取它们。了解 `mysql_config_editor` 是推荐的安全存储凭据的方式。\n\n**学习建议:**\n熟悉MySQL选项文件的加载顺序和不同section（如 `[client]`, `[mysql]`, `[mysqld]`）的用途。学习如何使用 `mysql_config_editor` 工具来创建和管理加密的登录凭据。注意在普通 `my.cnf` 文件中存储密码的安全隐患（文件权限需严格控制）。"
+    },
+    {
+        "question": "### 试题 16:\n\nChoose two. Examine the modified output:\n```sql\nmysql> SHOW SLAVE STATUS \\G\n*************************** 1. row ***************************\n          Slave_IO_Running: Yes\n         Slave_SQL_Running: Yes\n       Seconds_Behind_Master: 1612\n```\n`Seconds_Behind_Master` value is steadily growing. What are two possible causes?",
+        "selections": {
+            "A": "The master is producing a large volume of events in parallel but the slave is processing them serially.",
+            "B": "This value shows only I/O latency and is not indicative of the size of the transaction queue.",
+            "C": "One or more large tables do not have primary keys.",
+            "D": "The master is most probably too busy to transmit data and the slave needs to wait for more data.",
+            "E": "The parallel slave threads are experiencing lock contention."
+        },
+        "answers": [
+            "A",
+            "D"
+        ],
+        "summary": "### 选项分析与考点总结\n\n**选项分析:**\n`Seconds_Behind_Master` (SBM) 表示从库SQL线程应用事件的时间戳与主库I/O线程读取到的最新事件时间戳之间的差异。SBM持续增长表明从库处理速度跟不上主库事件产生的速度。\n\nA) 主库并行产生大量事件，而从库串行处理（或并行度不足/效率不高）：如果主库写入并发高，而从库SQL线程是单线程的，或者多线程复制（MTS）配置不当或遇到瓶颈，SQL线程会成为瓶颈，导致SBM增长 (A 正确)。\nD) 主库过于繁忙无法及时传输数据，或网络延迟导致从库等待数据：如果主库负载过高，或者主从之间的网络存在问题（带宽不足、高延迟、丢包），从库的I/O线程可能无法及时获取到最新的二进制日志事件，这也会导致SBM增加，因为SQL线程只能处理已接收到的事件 (D 正确)。\n\n错误选项分析：\nB) SBM反映的是SQL线程相对于I/O线程读取到的binlog事件的时间戳的延迟。它间接受到I/O延迟（因为SQL线程不能超越I/O线程）和SQL线程处理延迟（这是直接原因）的影响。它确实与事务队列的大小有关，因为积压的事件越多，SBM可能越大。\nC) 大表无主键确实会导致从库应用更新（尤其是行模式复制RBR下的UPDATE/DELETE）非常缓慢，可能引起SBM增长。但这通常是一个持续的性能问题，而题目描述的是“steadily growing”，A和D更直接地描述了吞吐量不匹配或数据获取延迟的动态过程。\nE) 如果从库启用了并行复制（MTS）并且并行工作线程之间发生锁争用，确实会导致SQL线程应用变慢，SBM增长。但选项A更具普遍性，即使是单SQL线程也可能发生A的情况。D则指向I/O瓶颈。\n\n**考点总结:**\n此题考察对MySQL复制延迟（`Seconds_Behind_Master`）原因的理解。延迟可能源于从库I/O线程无法及时从主库获取binlog，或者从库SQL线程（单个或多个）无法及时应用已获取的binlog事件。网络问题、主库负载、从库处理能力、大事务、锁争用等都可能导致延迟。",
+        "suggestion": "### 应试技巧与学习建议\n\n**应试技巧:**\n分析SBM增长时，要从I/O线程和SQL线程两方面考虑。I/O线程慢，SQL线程能处理的事件就少；SQL线程慢，即使I/O线程快，事件也会积压在relay log中。寻找描述这两种瓶颈的选项。\n\n**学习建议:**\n深入理解MySQL复制架构，包括I/O线程和SQL线程（以及并行复制协调线程和工作线程）的角色和工作流程。学习如何监控复制状态（`SHOW SLAVE STATUS`），并诊断常见的复制延迟问题。了解影响复制性能的因素，如网络、硬件、SQL效率、锁、binlog格式等。"
+    },
+    {
+        "question": "### 试题 17:\n\nChoose two. Which two are true about binary logs used in asynchronous replication?",
+        "selections": {
+            "A": "The master connects to the slave and initiates log transfer.",
+            "B": "They contain events that describe all queries run on the master.",
+            "C": "They contain events that describe database changes on the master.",
+            "D": "They are pulled from the master to the slave.",
+            "E": "They contain events that describe only administrative commands run on the master."
+        },
+        "answers": [
+            "C",
+            "D"
+        ],
+        "summary": "### 选项分析与考点总结\n\n**选项分析:**\n二进制日志（binary logs）是MySQL复制的核心组件，记录了数据库更改的事件。\nC) 它们包含描述主库上数据库更改的事件：这是二进制日志的主要目的。无论是基于语句的复制（SBR）、基于行的复制（RBR）还是混合模式（MBR），binlog的核心都是记录导致数据变化的DDL和DML操作 (C 正确)。\nD) 它们由从库从主库拉取：在异步复制中，从库的I/O线程主动连接到主库，并请求主库发送其二进制日志中的事件 (D 正确)。\n\n错误选项分析：\nA) 是从库连接到主库，而不是主库连接到从库。\nB) 二进制日志不一定包含所有在主库上运行的查询。例如，默认情况下，只读的`SELECT`查询通常不会被记录（除非配置了特定日志记录如慢查询日志，或使用SBR时某些特定的SELECT）。记录的内容取决于`binlog_format`以及查询是否修改数据。\nE) 二进制日志记录了所有导致数据或结构更改的事件，包括DML（如INSERT, UPDATE, DELETE）、DDL（如CREATE TABLE, ALTER TABLE）以及一些管理性但会影响复制的命令，并非“仅”管理命令。\n\n**考点总结:**\n此题考察对二进制日志在异步复制中作用的基本理解。关键点包括日志内容的本质（数据更改）和日志传输的方向（从库拉取）。",
+        "suggestion": "### 应试技巧与学习建议\n\n**应试技巧:**\n明确复制中主从服务器的角色和数据流向。记住binlog的核心是记录“变化”。\n\n**学习建议:**\n学习MySQL二进制日志的格式（STATEMENT, ROW, MIXED）及其各自的优缺点。理解binlog事件的类型和内容。掌握异步复制的基本设置步骤和工作原理，特别是I/O线程和SQL线程如何与binlog交互。"
+    },
+    {
+        "question": "### 试题 18:\n\nYou have appropriate privileges and are about to shut down a running MySQL server process on Oracle Linux 7. Which three are valid methods that will shut down the MySQL server?",
+        "selections": {
+            "A": "mysqld_safe -S /tmp/mysql.sock SHUTDOWN",
+            "B": "kill mysqld_safe",
+            "C": "mysqladmin shutdown",
+            "D": "mysql -S /tmp/mysql.sock --shutdown",
+            "E": "mysqld_safe --shutdown",
+            "F": "systemctl stop mysqld",
+            "G": "mysql> SHUTDOWN;"
+        },
+        "answers": [
+            "C",
+            "F",
+            "G"
+        ],
+        "summary": "### 选项分析与考点总结\n\n**选项分析:**\n关闭正在运行的MySQL服务器有多种方法，通常推荐使用能进行优雅关闭（graceful shutdown）的方式。\nC) `mysqladmin shutdown`：这是标准的命令行工具，用于连接到MySQL服务器并发送关闭命令。需要适当的权限和连接参数（如果不是默认）(C 正确)。\nF) `systemctl stop mysqld`：在Oracle Linux 7（以及其他使用systemd的系统）上，如果MySQL是通过systemd服务管理的（通常是这样），这是标准的、推荐的关闭服务的方法。它会执行预定义的关闭脚本 (F 正确)。\nG) `mysql> SHUTDOWN;`：在MySQL客户端中，拥有`SHUTDOWN`权限的用户可以执行此SQL命令来关闭服务器 (G 正确)。\n\n错误选项分析：\nA) 和 E) `mysqld_safe`是一个包装脚本，用于启动和监控`mysqld`进程。它本身不接受`--shutdown`或`SHUTDOWN`参数来关闭一个已运行的服务器。关闭是通过`mysqladmin`或信号完成的。\nB) `kill mysqld_safe`会杀死`mysqld_safe`脚本进程。如果`mysqld_safe`配置为在`mysqld`意外退出时重启它，那么`mysqld`本身可能不会被干净关闭，或者会被重启。直接`kill <mysqld_pid>`（通常用SIGTERM）是关闭`mysqld`进程的一种方式，但不如`mysqladmin shutdown`优雅。\nD) `mysql`命令行客户端没有`--shutdown`选项。关闭服务器的命令行工具是`mysqladmin`。\n\n**考点总结:**\n此题考察关闭MySQL服务器的正确方法。区分管理工具（如`mysqladmin`、`systemctl`）和SQL命令，以及它们的使用场景。",
+        "suggestion": "### 应试技巧与学习建议\n\n**应试技巧:**\n熟悉常用的MySQL管理命令和工具。了解在不同操作系统环境下（特别是使用systemd的Linux发行版）如何管理服务。记住`SHUTDOWN`是一条SQL命令，也是`mysqladmin`的一个子命令。\n\n**学习建议:**\n掌握`mysqladmin`工具的各种常用功能，包括`ping`, `processlist`, `status`, `variables`, 以及`shutdown`。学习如何使用系统服务管理工具（如`systemctl`或旧的`service`命令）来启动、停止和检查MySQL服务状态。了解MySQL的`SHUTDOWN`权限。"
+    },
+    {
+        "question": "### 试题 19:\n\nChoose two. Examine this MySQL Shell command: `dba.rebootClusterFromCompleteOutage()`\nWhich two statements are true?",
+        "selections": {
+            "A": "It stops and restarts all InnoDB Cluster instances and initializes the metadata.",
+            "B": "It only stops and restarts all InnoDB Cluster instances.",
+            "C": "It is not mandatory that all instances are running and reachable before running the command.",
+            "D": "It performs InnoDB Cluster instances rolling restart.",
+            "E": "It reconfigures InnoDB Cluster if the cluster was stopped.",
+            "F": "It picks the minimum number of instances necessary to rebuild the quorum and reconfigures InnoDB Cluster.",
+            "G": "It only starts all InnoDB Cluster instances."
+        },
+        "answers": [
+            "C",
+            "D"
+        ],
+        "summary": "### 选项分析与考点总结\n\n**选项分析:**\n`dba.rebootClusterFromCompleteOutage()` 是 MySQL Shell AdminAPI 中用于从整个集群完全宕机（所有成员离线或不可达，失去法定数量）的状态下恢复 InnoDB 集群的命令。\n\nC) 在运行此命令之前，并非强制要求所有实例都正在运行且可达。该命令正是设计用来处理实例不可用或集群无主的情况 (C 正确)。\nD) 该命令会尝试启动并重新配置集群实例，这个过程通常涉及逐个启动实例并使其重新加入集群，形成一种“滚动重启”的效果，以重建法定数量并恢复集群服务 (D 正确)。\n\n错误选项分析：\nA) 该命令主要是尝试启动和重新配置实例，而不是“停止并重启”。元数据应该已经存在，命令是基于现有元数据进行恢复，而不是“初始化元数据”。\nB) 它不仅是停止和重启，更重要的是重新配置和重建法定数量。\nE) “如果集群已停止”这个条件是命令的前提。命令的作用是尝试启动并重新配置已停止（或不可用）的集群以恢复服务。\nF) 它会尝试恢复尽可能多的实例以形成一个健康的集群，而不仅仅是满足最低法定数量的实例。\nG) 它不仅是启动实例，还包括重新配置集群、选举主节点和建立法定数量等关键步骤。\n\n**考点总结:**\n此题考察对 MySQL Shell AdminAPI 中 `dba.rebootClusterFromCompleteOutage()` 命令功能的理解。该命令是 InnoDB Cluster 在灾难性故障后进行恢复的关键工具，核心在于其能够在实例不可用的情况下工作，并尝试通过启动和重新配置来恢复集群。",
+        "suggestion": "### 应试技巧与学习建议\n\n**应试技巧:**\n理解命令名称中“FromCompleteOutage”的含义，这直接暗示了命令执行的前提条件（集群处于完全故障状态）。关注命令的核心目标：恢复集群服务。\n\n**学习建议:**\n学习 MySQL Shell AdminAPI 的使用，特别是 InnoDB Cluster 的部署、管理和故障恢复相关的命令。阅读官方文档中关于 `dba.rebootClusterFromCompleteOutage()` 的详细说明，了解其工作流程和适用场景。进行实验以加深理解。"
+    },
+    {
+        "question": "### 试题 20:\n\nChoose two. Examine this command and output:\n```bash\nroot@dbhost:/var/lib/mysql# ls -al\ntotal 540\ndrwxrwxr-x 1 mysql mysql 4096 Aug 22 14:07 .\ndrwxr-xr-x 1 root  root  4096 May 22 00:42 ..\n-rw-r----- 1 mysql mysql   56 Aug 20 13:58 auto.cnf\ndrwxr-xr-x 1 mysql mysql 4096 Aug 21 10:28 accounting\n-rw-r--r-- 1 mysql mysql 1112 Aug 20 13:58 ca.pem\n-rw-r----- 1 mysql mysql 172040 Aug 22 14:07 ib_buffer_pool\n-rw-r----- 1 mysql mysql 12582919 Aug 22 14:07 ibdata1\n-rw-r----- 1 mysql mysql 50331648 Aug 22 14:07 ib_logfile0\n-rw-r----- 1 mysql mysql 50331648 Aug 20 13:47 ib_logfile1\n-rw-r----- 1 mysql mysql 292292 Aug 22 14:07 ibtmp1\ndrwxr-x--- 1 mysql users 4096 Aug 20 13:59 mysql\n-rw-rw---- 1 mysql mysql 64064 Aug 22 15:18 mysql-error.log\ndrwxr-x--- 1 mysql mysql 4096 Aug 20 13:59 performance_schema\n-rw-r----- 1 mysql mysql 1680 Aug 20 13:59 private_key.pem\n-rw-r--r-- 1 mysql mysql  452 Aug 20 13:59 public_key.pem\n-rw-r--r-- 1 mysql mysql 1112 Aug 20 13:58 server-cert.pem\n-rw-r----- 1 mysql mysql 1680 Aug 20 13:58 server-key.pem\ndrwxr-x--- 1 mysql mysql 4096 Aug 20 13:59 sys\n```\nWhich two options will improve the security of the MySQL instance?",
+        "selections": {
+            "A": "Remove the world read/execute privilege from the accounting directory.",
+            "B": "Remove world read privileges from the public_key.pem file.",
+            "C": "Change the group ownership of the mysql directory to the mysql user group.",
+            "D": "Change the parent directory owner and group to mysql.",
+            "E": "Remove world read privileges from the server-cert.pem certificate file.",
+            "F": "Remove group read/write privileges from the private_key.pem file."
+        },
+        "answers": [
+            "A",
+            "F"
+        ],
+        "summary": "### 选项分析与考点总结\n\n**选项分析:**\n分析 `ls -al` 输出，寻找可以改进文件和目录权限以增强安全性的地方。\n\nA) `accounting` 目录权限为 `drwxr-xr-x` (755)。`world` 用户拥有读和执行权限。对于数据目录下的子目录，通常不需要给 `world` 这样的权限。移除 `world` 的 `r-x` 权限（例如改为750 `drwxr-x---`）可以提高安全性 (A 正确)。\nF) `private_key.pem` 文件权限为 `-rw-r-----` (640)。`group` 用户拥有读权限。私钥文件应该尽可能严格地限制访问，理想情况下是 `600` (`-rw-------`)，即只有所有者（`mysql`用户）可读写。移除 `group` 的读权限（`chmod g-r private_key.pem`）可以将其权限降为 `600`，从而提高安全性 (F 正确)。\n\n错误或非最佳选项分析：\nB) `public_key.pem` 文件权限为 `-rw-r--r--` (644)。公钥本身就是设计为公开的，允许 `world` 读取通常是可接受的，移除世界读权限对此类文件的安全性提升不大，甚至可能影响其正常使用（如果其他进程需要读取它）。\nC) `mysql` 目录（这里指MySQL schema目录，如 `performance_schema`, `sys` 以及用户数据库目录）权限为 `drwxr-x---`，但其组是 `users` (`drwxr-x--- 1 mysql users`)。将其组更改为 `mysql` (`chgrp mysql mysql`) 是一个好的实践，以保持一致性并遵循最小权限原则。但这可能不如直接限制过于宽松权限（如A和F）的优先级高。题目要求选择两个“改进安全”的选项，A和F是更直接的权限收紧。\nD) 父目录 `..` (即 `/var/lib/`) 的所有者是 `root:root`，权限是 `drwxr-xr-x`。这是标准的Linux目录结构和权限，将其所有者和组更改为 `mysql` 是不正确也不安全的，会破坏系统文件系统的标准所有权。\nE) `server-cert.pem` 文件权限为 `-rw-r--r--` (644)。服务器证书的公钥部分允许 `world` 读取通常是可接受的，类似于公钥文件。\n\n**考点总结:**\n此题考察对Linux文件系统权限的理解以及如何根据最小权限原则来保护MySQL数据目录及其内容。重点关注私密文件（如私钥）的严格权限设置和不必要开放的目录权限。",
+        "suggestion": "### 应试技巧与学习建议\n\n**应试技巧:**\n仔细阅读 `ls -al` 的输出，关注每个文件/目录的所有者、组、权限位。思考哪些权限是“多余的”或“不安全的”。特别是对于敏感数据（如密钥、数据库文件），权限应尽可能收紧。\n\n**学习建议:**\n复习Linux文件权限（读、写、执行对于文件和目录的不同含义，以及数字表示法如755、640、600等）。学习MySQL安全最佳实践中关于数据目录权限的部分。理解为什么某些文件（如公钥、证书）可以有较宽松的权限，而另一些文件（如私钥、数据文件）必须严格控制。"
+    },
+    {
+        "question": "### 试题 21:\n\nChoose two. Which two statements are true about general tablespaces?",
+        "selections": {
+            "A": "General tablespaces support temporary tables.",
+            "B": "Dropping a table from a general tablespace releases the space back to the operating system.",
+            "C": "An existing table can be moved into a general tablespace.",
+            "D": "A general tablespace can have multiple data files.",
+            "E": "A new table can be created explicitly in a general tablespace."
+        },
+        "answers": [
+            "C",
+            "E"
+        ],
+        "summary": "### 选项分析与考点总结\n\n**选项分析:**\n通用表空间 (General Tablespaces) 是MySQL InnoDB存储引擎提供的一种共享表空间机制。\nC) 现有的表可以使用 `ALTER TABLE ... TABLESPACE = tablespace_name;` 语句移入一个通用表空间 (C 正确)。\nE) 新表可以使用 `CREATE TABLE ... TABLESPACE = tablespace_name;` 语句显式地在通用表空间中创建 (E 正确)。\n\n错误选项分析：\nA) 通用表空间不支持存储临时表。临时表有其自身的管理机制。\nB) 从通用表空间中删除表时，空间在表空间内部被标记为可用，但通常不会立即释放回操作系统。回收通用表空间文件占用的磁盘空间比较复杂，类似于系统表空间。\nD) 每个通用表空间由单个 `.ibd` 数据文件组成，不支持多个数据文件。\n\n**考点总结:**\n此题再次考察了对InnoDB通用表空间特性的理解。关键在于其支持多表存储于单个数据文件，表可以被创建于其中或迁移至其中，但空间管理和对临时表的支持有特定限制。",
+        "suggestion": "### 应试技巧与学习建议\n\n**应试技巧:**\n回顾试题13的考点。通用表空间是 `innodb_file_per_table=OFF` (共享表空间) 和 `innodb_file_per_table=ON` (独立表空间) 之间的一种折中或补充。记住其核心特性：多表共享单文件，但不是系统表空间。表的创建和迁移是其主要使用场景。\n\n**学习建议:**\n深入理解InnoDB的表空间管理，包括系统表空间、独立表空间、通用表空间、undo表空间和临时表空间的区别和用途。掌握如何创建和管理通用表空间，以及在其中创建或移动表的SQL语法。了解其在空间回收方面的限制。"
+    },
+    {
+        "question": "### 试题 22:\n\nChoose three. Examine this command, which executes successfully: `cluster.addInstance('<user>@<host>:<port>', {recoveryMethod: 'clone'})`\nWhich three statements are true?",
+        "selections": {
+            "A": "It is always slower than recoveryMethod: 'incremental'.",
+            "B": "InnoDB tablespaces outside the datadir are able to be cloned.",
+            "C": "A target instance must exist, then it will be provisioned with data from an instance already in the cluster and joined to the cluster.",
+            "D": "The account used to perform this recovery needs the BACKUP_ADMIN privilege.",
+            "E": "A new instance is installed, initialized, and provisioned with data from an instance already in the cluster and joined to the cluster.",
+            "F": "InnoDB redo logs must not rotate for the duration of the execution; otherwise, the recovery will fail."
+        },
+        "answers": [
+            "B",
+            "C",
+            "D"
+        ],
+        "summary": "### 选项分析与考点总结\n\n**选项分析:**\n`cluster.addInstance()` 使用 `recoveryMethod: 'clone'` 意味着新加入的实例将通过MySQL克隆功能从集群中的现有成员（donor）复制数据。\nB) MySQL克隆功能支持克隆位于数据目录之外的InnoDB表空间。只要这些表空间是InnoDB管理的，并且在donor上有相应的配置，它们可以被正确克隆到recipient (B 正确)。\nC) 目标实例（recipient）必须预先存在并且已配置好，但通常不包含数据（或是空实例）。`addInstance` 命令会将其连接到集群，并通过克隆从donor处获取数据来“供应”它，然后将其正式加入集群 (C 正确)。\nD) 执行克隆操作的用户（在donor和recipient上）需要特定的权限。在donor上，用户需要 `BACKUP_ADMIN` 权限来允许数据被克隆。在recipient上，用户需要 `CLONE_ADMIN` 权限来接收和应用克隆的数据 (D 正确，题目中指“执行此恢复的账户”，通常指donor上的权限需求)。\n\n错误选项分析：\nA) 克隆通常用于数据量较大或差异较大的情况，它传输的是物理数据副本。增量恢复（`incremental`，通常指基于binlog的追赶）适用于新实例与集群数据差异较小的情况。克隆不一定“总是”比增量慢，这取决于数据量、网络速度和具体场景。\nE) `addInstance` 本身不负责“安装”MySQL实例。它假设MySQL实例已经安装并基本配置好（例如，可以通过网络访问）。它负责的是初始化（如果需要）、通过克隆供应数据，并将其加入集群。\nF) 虽然在某些备份/恢复场景中，redo log的轮转可能需要注意，但对于MySQL克隆操作，它有自己的机制来确保数据一致性。克隆操作本身对redo log的轮转有特定的处理，不会简单因为redo log轮转而失败。\n\n**考点总结:**\n此题考察对MySQL InnoDB Cluster中添加实例时使用克隆作为恢复方法的理解。涉及克隆功能的能力（如处理外部表空间）、目标实例的状态、所需权限以及与增量恢复的区别。",
+        "suggestion": "### 应试技巧与学习建议\n\n**应试技巧:**\n理解`recoveryMethod: 'clone'`的核心含义——物理数据复制。关注克隆操作的前提条件（如目标实例存在、权限）和克隆能处理的范围（如数据目录外的表空间）。\n\n**学习建议:**\n深入学习MySQL的克隆功能，包括其工作原理、优点、限制以及所需的权限（`BACKUP_ADMIN`, `CLONE_ADMIN`）。学习如何在InnoDB Cluster中使用AdminAPI的`addInstance`命令，并理解不同的`recoveryMethod`选项（`clone`, `incremental`, `auto`）之间的区别和适用场景。"
+    },
+    {
+        "question": "### 试题 23:\n\nChoose three. Which three sets of item information are visible in the mysql system database?",
+        "selections": {
+            "A": "time zone information and definitions",
+            "B": "help topics",
+            "C": "plugins",
+            "D": "audit log events",
+            "E": "performance monitoring information",
+            "F": "rollback segments",
+            "G": "information about table structures"
+        },
+        "answers": [
+            "A",
+            "B",
+            "C"
+        ],
+        "summary": "### 选项分析与考点总结\n\n**选项分析:**\n`mysql`系统数据库存储了MySQL服务器运行所需的多种元数据和配置信息。\nA) 时区信息和定义：`mysql`数据库包含用于支持时区转换的表，如 `time_zone`, `time_zone_name` 等 (A 正确)。\nB) 帮助主题：`mysql`数据库包含 `help_topic`, `help_keyword` 等表，存储了`HELP`命令显示的内容 (B 正确)。\nC) 插件信息：`mysql`数据库的 `plugin` 表存储了已安装插件的信息 (C 正确)。\n\n错误选项分析：\nD) 审计日志事件：如果启用了MySQL Enterprise Audit，审计日志事件通常记录到文件或syslog，而不是直接存储在`mysql`数据库的表中供常规查询（虽然审计插件的配置可能在`mysql`库中）。\nE) 性能监控信息：性能监控信息主要由Performance Schema提供，它有自己的内存结构和表，而非存储在`mysql`数据库中。\nF) 回滚段（Rollback segments）：这是Oracle数据库的术语。MySQL InnoDB使用undo日志进行事务回滚和MVCC，undo日志的管理有其自身的表空间和机制，其元数据可能部分在数据字典，但“回滚段”这个概念和具体信息不在`mysql`库中以这种形式暴露。\nG) 表结构信息：在MySQL 8.0之前，部分表结构信息（如`.frm`文件内容）的元数据可能在`mysql`库的系统表中。但在MySQL 8.0及以后，表结构信息主要存储在数据字典中，尽管`mysql`库本身也是数据字典的一部分，但更精确地说，信息是统一管理在数据字典中，而非特指“可见于mysql系统数据库”。对于用户表，其定义在数据字典，Information Schema提供视图访问。\n\n**考点总结:**\n此题考察对`mysql`系统数据库存储内容的了解。它包含了用户账户、权限、时区、帮助信息、插件配置、存储过程/函数定义（在8.0之前较多，8.0后主要在数据字典）等关键信息。",
+        "suggestion": "### 应试技巧与学习建议\n\n**应试技巧:**\n思考哪些信息是MySQL服务器运行和管理所必需的“静态”配置或元数据。排除那些动态的、运行时产生的数据（如性能数据、审计事件本身）。\n\n**学习建议:**\n浏览`mysql`系统数据库中的表结构（可以使用`SHOW TABLES FROM mysql;`然后`DESCRIBE mysql.table_name;`）。了解每个主要系统表存储了什么类型的信息。特别注意MySQL 8.0引入数据字典后，元数据存储方式的变化，虽然`mysql`库仍然重要，但数据字典是更核心的元数据存储。",
+        "suggestion_detail": "对于G选项，在MySQL 5.7及更早版本，`mysql`数据库确实包含一些与表结构相关的系统表。然而，随着MySQL 8.0数据字典的引入，所有元数据（包括表结构）都集中存储在事务性的数据字典中。`mysql`模式下的表本身也成为了数据字典的一部分。题目问“visible in the mysql system database”，如果从广义上数据字典也算，则G可能是对的。但如果指传统意义上通过查询`mysql`库中的特定表来直接查看用户表的完整结构定义，这在8.0后不那么直接了，`INFORMATION_SCHEMA`是标准接口。考虑到其他选项的明确性，A, B, C是更稳妥的选择。"
+    },
+    {
+        "question": "### 试题 24:\n\nWhich two situations will cause the binary log to rotate?",
+        "selections": {
+            "A": "FLUSH HOSTS executed",
+            "B": "max_binlog_size exceeded",
+            "C": "max_binlog_cache_size exceeded",
+            "D": "SET sql_log_bin=0 executed",
+            "E": "SET sync_binlog=1 executed",
+            "F": "FLUSH LOGS executed"
+        },
+        "answers": [
+            "B",
+            "F"
+        ],
+        "summary": "### 选项分析与考点总结\n\n**选项分析:**\n二进制日志轮转（rotate）指的是关闭当前的二进制日志文件，并开启一个新的二进制日志文件进行写入。\nB) `max_binlog_size` 参数定义了单个二进制日志文件的最大大小。当写入操作导致当前binlog文件大小超过这个限制时，会自动发生轮转 (B 正确)。\nF) `FLUSH LOGS;` 命令会关闭并重新打开所有MySQL正在使用的日志文件，包括二进制日志。这会强制二进制日志进行轮转 (F 正确)。也可以使用 `FLUSH BINARY LOGS;` 只轮转二进制日志。\n\n错误选项分析：\nA) `FLUSH HOSTS;` 用于清空主机缓存，与日志轮转无关。\nC) `max_binlog_cache_size` 定义了事务期间用于缓存binlog事件的内存大小。如果事务的binlog事件超出了这个缓存，会写入临时文件，但这与binlog文件本身的轮转是两回事。\nD) `SET sql_log_bin=0;` 会在当前会话中禁用二进制日志记录，不会导致轮转。\nE) `SET sync_binlog=1;` 控制二进制日志同步到磁盘的频率（每1次写入就同步），影响性能和持久性，但本身不直接导致轮转。\n\n**考点总结:**\n此题考察触发MySQL二进制日志轮转的条件。主要包括达到最大文件大小和手动执行`FLUSH LOGS`或`FLUSH BINARY LOGS`命令。",
+        "suggestion": "### 应试技巧与学习建议\n\n**应试技巧:**\n区分自动轮转条件（如大小限制）和手动触发轮转的命令。理解各个`FLUSH`命令的作用。\n\n**学习建议:**\n学习二进制日志的管理，包括其配置参数（`log_bin`, `binlog_format`, `max_binlog_size`, `expire_logs_days`, `sync_binlog`等）。掌握如何手动轮转和清理二进制日志。理解二进制日志在复制和时间点恢复中的重要性。"
+    },
+    {
+        "question": "### 试题 25:\n\nChoose three. Which three statements are true about MySQL replication?",
+        "selections": {
+            "A": "Each slave must have its own MySQL user for replication.",
+            "B": "A replication user must have the SELECT privilege for all tables that need to be replicated.",
+            "C": "Each instance in a replication topology must have a unique server ID.",
+            "D": "Any instance can have multiple slaves, but it can have only one master.",
+            "E": "Binary logs contain only transactions originating from a single MySQL instance.",
+            "F": "Replication can use only TCP/IP connections.",
+            "G": "Binary logging must be enabled on the master in order to replicate to other instances."
+        },
+        "answers": [
+            "C",
+            "F",
+            "G"
+        ],
+        "summary": "### 选项分析与考点总结\n\n**选项分析:**\nC) 复制拓扑中的每个MySQL实例都必须配置一个唯一的`server_id`。这是区分不同服务器并防止复制循环的关键 (C 正确)。\nF) 标准的MySQL异步复制和半同步复制使用TCP/IP网络连接在主从之间传输数据 (F 正确)。虽然理论上可以通过其他方式传输binlog文件，但实时复制依赖网络连接。\n注：MySQL也支持基于Unix套接字的本地连接，但通常复制场景指的是不同服务器之间的网络连接。\nG) 主服务器上必须启用二进制日志（`log_bin`参数开启），因为从服务器通过读取主服务器的二进制日志来复制更改 (G 正确)。\n\n错误选项分析：\nA) 多个从服务器可以共享同一个用于复制的MySQL用户账户，只要该账户在主服务器上被正确创建并授予了`REPLICATION SLAVE`权限。当然，为每个从服务器创建独立用户也是一种好的安全实践，但不是“必须”。\nB) 复制用户（在主库上创建，供从库连接使用）需要的是 `REPLICATION SLAVE` 权限。这个权限允许从库连接并请求binlog。从库应用binlog事件时，是以从库自身的权限执行，或者在特定配置下模拟原始用户。复制用户本身不需要对表有`SELECT`权限。\nD) 一个实例可以作为多个从服务器的主服务器。一个实例也可以是其他多个主服务器的从服务器（多源复制）。一个实例也可以同时作为主服务器和从服务器（例如在链式复制或环形复制中）。因此，“只能有一个主服务器”这个说法不完全准确，取决于拓扑结构。但通常一个从实例直接连接到一个主实例拉取日志。\nE) 二进制日志记录的是在其所在MySQL实例上发生的修改数据的事件。在复杂的复制拓扑中（如主主复制后又作为其他从的主），一个实例的binlog可能包含了源自其他实例通过复制应用过来的更改。但每个binlog文件是特定于它所在的实例的。\n\n**考点总结:**\n此题考察MySQL复制的基本原则和配置要求。核心概念包括`server_id`的唯一性、二进制日志在主库的必要性以及网络连接的使用。",
+        "suggestion": "### 应试技巧与学习建议\n\n**应试技巧:**\n回顾MySQL复制的基础架构。哪些是硬性要求（如`server_id`, `log_bin`），哪些是常见的实践或配置选项。考虑不同的复制拓扑。\n\n**学习建议:**\n深入理解MySQL异步复制的设置步骤和关键参数。学习不同复制拓扑（如主从、主主、链式、星型、多源）的特点和适用场景。掌握复制用户的创建和权限授予 (`REPLICATION SLAVE`, `REPLICATION CLIENT`)。了解GTID（全局事务标识符）在现代复制中的作用。"
+    },
+    {
+        "question": "### 试题 26:\n\nThe data in this instance transient; no backup or replication will be required. It is currently under performing. The database size is static and including indexes is 19G. Total system memory is 32G. After profiling the system, you highlight these MySQL status and global variables:\n```\nCom_rollback 85408355\nCom_commit 1234342\nInnodb_buffer_pool_pages_free 163840\nmysqld Buffer_pool_size=20G\nInnodb_flush_log_at_trx_commit=2\nDisable-log-bin\n```\nThe OS metrics indicate that disk is a bottleneck. Other variables retain their default values.\nWhich two changes will provide the most benefit to the instance?",
+        "selections": {
+            "A": "sync_binlog=0",
+            "B": "buffer_pool_size=24G",
+            "C": "innodb_flush_log_at_trx_commit=1",
+            "D": "innodb_doublewrite=0",
+            "E": "max_connections=10000",
+            "F": "innodb_log_file_size=1G"
+        },
+        "answers": [
+            "B",
+            "D"
+        ],
+        "summary": "### 选项分析与考点总结\n\n**选项分析:**\n题目描述：数据是瞬态的，不需要备份和复制，磁盘是瓶颈。目标是提高性能。\n- 数据库大小19G，InnoDB缓冲池20G，空闲页163840个 (163840 * 16KB / 1024 / 1024 ≈ 2.5G空闲)。这表明缓冲池略大于数据集，有一定空闲空间。\n- `Com_rollback` 远大于 `Com_commit`，可能意味着大量事务被回滚，或者存在长时间运行的事务导致undo段增长和清理问题，但这与磁盘瓶颈的直接关系不大。\n- `Innodb_flush_log_at_trx_commit=2`: 表示redo log每一秒刷盘一次，不是每次事务提交都刷盘。这在一定程度上牺牲了持久性以换取性能。\n- `Disable-log-bin`: 二进制日志已禁用，符合“不需要复制”的描述。\n\n针对磁盘瓶颈和性能提升：\nB) `buffer_pool_size=24G`: 将缓冲池从20G增加到24G（系统总内存32G）。由于数据集19G，20G的缓冲池已经能容纳大部分数据。增加到24G可以容纳更多数据和索引，进一步减少磁盘I/O，有助于缓解磁盘瓶颈 (B 正确)。\nD) `innodb_doublewrite=0` (禁用双写缓冲): 双写缓冲是为了防止部分页写入导致的数据损坏，但会带来额外的写I/O。题目明确说明数据是“瞬态的”，意味着数据丢失的风险可以接受。禁用双写可以减少写I/O，从而缓解磁盘瓶颈，提升写性能 (D 正确)。\n\n错误选项分析：\nA) `sync_binlog=0`: 二进制日志已禁用 (`Disable-log-bin`)，所以此参数无效。\nC) `innodb_flush_log_at_trx_commit=1`: 将其改为1会使每次事务提交都刷redo log到磁盘，这会增加磁盘I/O，加剧磁盘瓶颈，与目标相反。\nE) `max_connections=10000`: 当前没有信息表明连接数是瓶颈。随意增加大量连接数可能耗尽内存或其他资源，对性能不利。\nF) `innodb_log_file_size=1G`: 虽然合理的redo log大小对性能有益（减少刷盘频率），但当前`Innodb_flush_log_at_trx_commit=2`已经降低了刷盘频率。在磁盘是瓶颈的情况下，单纯增加redo log大小可能不如直接减少I/O操作（如B和D）有效。而且1G可能过大或过小，没有足够信息判断。\n\n**考点总结:**\n此题考察在特定场景（瞬态数据、磁盘瓶颈）下如何通过调整MySQL参数来优化性能。关键在于识别哪些参数会影响磁盘I/O，并根据场景的特殊性（可接受数据丢失风险）做出取舍。",
+        "suggestion": "### 应试技巧与学习建议\n\n**应试技巧:**\n仔细阅读题目给出的所有信息，特别是场景约束（如瞬态数据、无备份要求）和性能瓶颈（磁盘I/O）。结合这些信息评估每个参数调整的影响。寻找那些能直接减少磁盘读写操作或优化磁盘使用模式的选项。\n\n**学习建议:**\n深入理解InnoDB的关键性能参数，如`innodb_buffer_pool_size`, `innodb_flush_log_at_trx_commit`, `innodb_doublewrite`, `innodb_log_file_size`等。了解它们各自的作用、对性能的影响以及在不同场景下的推荐配置。学习如何通过状态变量（如`Innodb_buffer_pool_pages_free`, `Com_commit`, `Com_rollback`）和OS指标来诊断性能问题。"
+    },
+    {
+        "question": "### 试题 27:\n\nChoose two. User `fwuser`@`localhost` is registered with the MySQL Enterprise Firewall and has been granted privileges for the SAKILA database. Examine these commands that you executed and the results:\n```sql\nmysql> SELECT MODE FROM INFORMATION_SCHEMA.MYSQL_FIREWALL_USERS WHERE USERHOST = 'fwuser@localhost';\n+------------+\n| MODE       |\n+------------+\n| PROTECTING |\n+------------+\n```\n```sql\nmysql> SELECT RULE FROM INFORMATION_SCHEMA.MYSQL_FIREWALL_WHITELIST WHERE USERHOST = 'fwuser@localhost';\n+-----------------------------------------------------------------------------+\n| RULE                                                                        |\n+-----------------------------------------------------------------------------+\n| SELECT `first_name`, `last_name` FROM `customer` WHERE `customer_id` = ?    |\n| SELECT `get_customer_balance`(? , NOW())                                    |\n| UPDATE `rental` SET `return_date` = NOW() WHERE `rental_id` = ?             |\n| SELECT @@`version_comment` LIMIT ?                                          |\n+-----------------------------------------------------------------------------+\n```\nYou then execute this command: `mysql> CALL mysql.sp_set_firewall_mode('fwuser@localhost', 'RESET');`\nWhich two are true?",
+        "selections": {
+            "A": "The fwuser@localhost account is removed from the mysql.user table.",
+            "B": "The information_schema.MYSQL_FIREWALL_WHITELIST table is truncated.",
+            "C": "The whitelist of the fwuser@localhost account is truncated.",
+            "D": "The mysql.firewall_users table is truncated.",
+            "E": "The firewall resets all options to default values.",
+            "F": "The fwuser@localhost account mode is set to DETECTING.",
+            "G": "The fwuser@localhost account mode is set to OFF."
+        },
+        "answers": [
+            "C",
+            "G"
+        ],
+        "summary": "### 选项分析与考点总结\n\n**选项分析:**\n调用 `mysql.sp_set_firewall_mode('fwuser@localhost', 'RESET')` 会对指定用户的防火墙配置执行重置操作。\n根据MySQL Enterprise Firewall的文档，将模式设置为`RESET`会导致以下行为：\n1.  删除该用户配置文件的所有规则（即清空白名单）。\n2.  将该用户配置文件的模式设置为`OFF`。\n\nC) `fwuser@localhost` 账户的白名单被清空（truncated）。这是`RESET`操作的一部分 (C 正确)。\nG) `fwuser@localhost` 账户的防火墙模式被设置为`OFF`。这也是`RESET`操作的直接结果 (G 正确)。\n\n错误选项分析：\nA) 防火墙操作不影响`mysql.user`表中的用户账户本身，用户账户仍然存在。\nB) `INFORMATION_SCHEMA.MYSQL_FIREWALL_WHITELIST` 是一个视图，它显示的是所有防火墙用户的白名单规则。`RESET`操作只针对特定用户`fwuser@localhost`的规则，不会清空整个视图（即所有用户的规则）。\nD) `mysql.firewall_users` 表（或类似的基础表）存储了所有已注册防火墙用户及其模式。`RESET`操作会更新特定用户的模式为`OFF`，但不会清空整个表。\nE) “重置所有选项为默认值”过于宽泛。`RESET`主要影响的是特定用户的规则列表和模式。其他防火墙相关的全局设置或不同用户的配置不受影响。\nF) 模式被设置为`OFF`，而不是`DETECTING`。\n\n**考点总结:**\n此题考察对MySQL Enterprise Firewall中`RESET`模式操作效果的理解。核心是它会清除特定用户的白名单规则并将该用户的防火墙模式设置为`OFF`。",
+        "suggestion": "### 应试技巧与学习建议\n\n**应试技巧:**\n理解防火墙不同模式（如`OFF`, `DETECTING`, `PROTECTING`, `RECORDING`）的含义以及模式转换（特别是`RESET`）的影响。注意操作是针对特定用户还是全局。\n\n**学习建议:**\n学习MySQL Enterprise Firewall的配置和管理，包括如何注册用户、设置模式、管理白名单规则。查阅官方文档中关于`mysql.sp_set_firewall_mode`存储过程及其不同模式参数（包括`RESET`）的详细说明。"
+    },
+    {
+        "question": "### 试题 28:\n\nChoose two. Examine this statement and output:\n```sql\nmysql> SHOW GRANTS FOR jsmith;\nGrants for jsmith@%\nGRANT USAGE ON *.* TO 'jsmith'@'%'\nGRANT UPDATE (Name) ON `world`.`country` TO 'jsmith'@'%';\n2 rows in set (0.00 sec)\n```\nWhich two SQL statements can `jsmith` execute?",
+        "selections": {
+            "A": "UPDATE world.country SET Name=CONCAT('New', Name);",
+            "B": "UPDATE world.country SET Name='one' LIMIT 1;",
+            "C": "UPDATE world.country SET Name='first' ORDER BY Name LIMIT 1;",
+            "D": "UPDATE world.country SET Name='all';",
+            "E": "UPDATE world.country SET Name='new' WHERE Name='old';"
+        },
+        "answers": [
+            "B",
+            "D"
+        ],
+        "summary": "### 选项分析与考点总结\n\n**选项分析:**\n用户`jsmith`拥有对`world.country`表`Name`列的`UPDATE`权限。\nB) `UPDATE world.country SET Name='one' LIMIT 1;`：这是一个合法的`UPDATE`语句，只更新`Name`列，并且使用了`LIMIT`子句。用户拥有对`Name`列的更新权限，因此可以执行 (B 正确)。\nD) `UPDATE world.country SET Name='all';`：这是一个合法的`UPDATE`语句，只更新`Name`列，会更新表中所有行的`Name`列。用户拥有对`Name`列的更新权限，因此可以执行 (D 正确)。\n\n错误选项分析：\nA) `UPDATE world.country SET Name=CONCAT('New', Name);`：这个语句在`SET`子句的右侧读取了`Name`列的值 (`CONCAT('New', Name)`)。用户`jsmith`只有对`Name`列的`UPDATE`权限，没有明确的`SELECT`权限。在列级权限下，如果`UPDATE`操作需要读取被更新列的旧值（如本例中的`Name`），则用户也需要对该列有`SELECT`权限。由于未授予`SELECT`权限，此操作可能会失败。\nC) `UPDATE world.country SET Name='first' ORDER BY Name LIMIT 1;`：`ORDER BY Name`子句需要对`Name`列进行读取和排序操作，这通常需要`SELECT`权限。由于用户没有`SELECT (Name)`权限，此操作可能会失败。\nE) `UPDATE world.country SET Name='new' WHERE Name='old';`：`WHERE Name='old'`子句需要对`Name`列进行读取操作以进行比较。由于用户没有`SELECT (Name)`权限，此操作可能会失败。\n\n**考点总结:**\n此题考察MySQL的列级权限。当用户只有对某列的`UPDATE`权限时，他们可以直接设置该列的值（如`SET Name = 'constant_value'`）。但是，如果`UPDATE`语句的`SET`子句的右侧表达式、`WHERE`子句或`ORDER BY`子句中引用了该列（或其他列），则用户还需要对这些被引用的列拥有相应的`SELECT`权限。",
+        "suggestion": "### 应试技巧与学习建议\n\n**应试技巧:**\n仔细分析`UPDATE`语句的每个部分。如果`SET`右侧、`WHERE`条件或`ORDER BY`中使用了某个列，就需要考虑对该列的读取权限（`SELECT`）。如果权限只授予了`UPDATE (column)`，则只能进行最简单的赋值更新。\n\n**学习建议:**\n深入理解MySQL的权限系统，特别是表级权限和列级权限。学习`GRANT`和`REVOKE`语句的详细语法。练习分析不同权限组合下用户能够执行哪些操作。注意列级权限的细微之处，例如`UPDATE`操作可能隐含地需要`SELECT`权限。"
+    },
+    {
+        "question": "### 试题 29:\n\nChoose two. There are five MySQL instances configured with a working group replication. Examine the output of the group members:\n```sql\nmysql> SELECT MEMBER_ID, MEMBER_STATE FROM performance_schema.replication_group_members;\n+--------------------------------------+--------------+\n| MEMBER_ID                            | MEMBER_STATE |\n+--------------------------------------+--------------+\n| 1999b9fb-4aaf-11e6-bb54-28b2bd168d07 | UNREACHABLE  |\n| 199b2df7-4aaf-11e6-bb16-28b2bd168d07 | ONLINE       |\n| 199bb88e-4aaf-11e6-babe-28b2bd168d07 | ONLINE       |\n| 1ab72fc-4aaf-11e6-bb51-28b2bd168d07 | UNREACHABLE  |\n| 19b33846-4aaf-11e6-ba81-28b2bd168d07 | UNREACHABLE  |\n+--------------------------------------+--------------+\n```\nWhich two statements are true about network partitioning in the cluster?",
+        "selections": {
+            "A": "The group replication will buffer the transactions on the online nodes until the unreachable nodes return online.",
+            "B": "A manual intervention to force group members to be only the working two instances is required.",
+            "C": "The cluster will shut down to preserve data consistency.",
+            "D": "There could be both a 2 node and 3 node group replication still running, so shutting down group replication and diagnosing the issue is recommended.",
+            "E": "The cluster has built-in high availability and updates group_replication_ip_whitelist to remove the unreachable nodes."
+        },
+        "answers": [
+            "B",
+            "D"
+        ],
+        "summary": "### 选项分析与考点总结\n\n**选项分析:**\n输出显示5个成员中有3个是`UNREACHABLE`，只有2个是`ONLINE`。这是一个典型的网络分区（脑裂）情况。组复制为了保证数据一致性，需要大多数成员（quorum）在线才能继续处理写事务。默认情况下，多数派是 `floor(N/2) + 1`，其中N是配置的组成员总数。在这个例子中，N=5，多数派需要 `floor(5/2) + 1 = 2 + 1 = 3` 个成员在线。\n由于只有2个成员在线，少于3个，所以当前的2个`ONLINE`成员组成的分区无法形成法定多数，因此它们不能处理写事务以避免数据不一致。\n\nD) 这个描述是合理的。由于网络分区，可能存在一个包含2个在线节点的分区和一个（或多个）包含3个不可达节点（它们之间可能互相可见）的分区。如果那3个不可达节点之间仍然可以通信并形成一个3节点的多数派，那么它们可能会继续运行并处理事务，导致与2节点分区的数据分歧。因此，诊断并解决网络分区，可能需要停止部分或全部组复制以进行修复 (D 正确)。\nB) 在这种情况下，如果网络分区无法快速解决，并且希望让当前的2个在线节点恢复服务（即使是以可能丢失少数派分区数据为代价，或者在确认少数派分区确实无法恢复后），管理员可能需要手动干预。这可能包括调整组复制配置，例如强制将这2个节点形成一个新的、较小的组（这通常需要先解决旧组的多数派问题，或者在极端情况下重建组），或者使用`group_replication_force_members`等高级命令（需谨慎使用） (B 正确，指出了手动干预的必要性)。\n\n错误选项分析：\nA) 在线节点（如果它们是少数派）通常不会无限期缓冲事务等待不可达节点恢复。它们会因为无法形成多数派而停止处理写事务，或者进入只读模式。\nC) 集群不一定会“自动关闭”。少数派分区会失去处理写事务的能力，但节点本身可能仍然运行。多数派分区（如果存在且未被管理员干预）可能会继续运行。\nE) 虽然组复制提供高可用性，但它不能自动解决所有类型的网络分区，特别是当没有明确的多数派时。`group_replication_ip_whitelist` (或 `group_replication_ip_allowlist` 在新版本中) 用于限制哪些主机可以连接到组成员，它不直接用于从活动成员列表中移除因网络问题而不可达的节点。\n\n**考点总结:**\n此题考察对MySQL组复制中网络分区和法定数量（quorum）概念的理解。当发生网络分区导致没有分区能形成多数派时，集群的写操作会受阻。解决这类问题通常需要网络修复或管理员手动干预。",
+        "suggestion": "### 应试技巧与学习建议\n\n**应试技巧:**\n计算法定多数（quorum）是解决此类问题的关键。根据组成员总数判断当前在线成员是否构成多数派。理解多数派机制是为了防止脑裂和数据不一致。当没有多数派时，思考集群的行为和可能的恢复步骤。\n\n**学习建议:**\n深入学习MySQL组复制的架构、成员状态、法定数量机制以及Paxos或其变种协议（如XCom）在达成共识中的作用。了解如何监控组复制状态（如`performance_schema.replication_group_members`表）。学习处理网络分区和成员故障的策略，包括自动恢复机制的限制和需要手动干预的场景。"
+    },
+    {
+        "question": "### 试题 30:\n\nChoose two. Which two statements are true about InnoDB data-at-rest encryption?",
+        "selections": {
+            "A": "It supports all indexes transparently.",
+            "B": "It decrypts data for use in memory.",
+            "C": "It supports only non-blob datatypes.",
+            "D": "It does not support the transportable tablespaces feature.",
+            "E": "It enforces encryption from disk to memory and over network transmission."
+        },
+        "answers": [
+            "A",
+            "B"
+        ],
+        "summary": "### 选项分析与考点总结\n\n**选项分析:**\nInnoDB静态数据加密 (data-at-rest encryption) 指的是对存储在磁盘上的表空间文件进行加密。\nA) 它透明地支持所有索引的加密。当表被加密时，其上的所有索引（包括主键和二级索引）也会被加密 (A 正确)。\nB) 当加密的数据页从磁盘读入内存（例如，InnoDB缓冲池）时，数据会被解密以供MySQL服务器使用。在内存中，数据是以未加密的形式存在的 (B 正确)。\n\n错误选项分析：\nC) InnoDB静态加密支持所有数据类型，包括BLOB、TEXT等大对象类型。\nD) 静态加密与可传输表空间（transportable tablespaces）功能是兼容的。加密的表空间可以被传输，但目标服务器需要有相应的密钥才能访问数据。\nE) 静态加密只负责磁盘上数据的加密。数据在内存中是解密的。网络传输的加密（data-in-transit）是由SSL/TLS连接负责的，与静态加密是两回事。\n\n**考点总结:**\n此题考察对InnoDB静态数据加密的关键特性和范围的理解。核心是加密作用于磁盘上的数据（包括表和索引），在内存中数据是解密的，并且它与网络加密是独立的功能。",
+        "suggestion": "### 应试技巧与学习建议\n\n**应试技巧:**\n区分“静态数据加密”（data-at-rest）、“动态数据加密”（data-in-transit）和“使用中数据加密”（data-in-use，通常指内存中数据的处理）。明确InnoDB静态加密主要解决的是物理存储介质丢失或被未授权访问时的安全问题。\n\n**学习建议:**\n学习MySQL的透明数据加密（TDE）功能，特别是InnoDB的实现方式。了解其架构（如两层密钥管理：master key和tablespace keys）、配置步骤、支持的加密算法以及对性能的影响。熟悉如何管理加密密钥（如使用keyring插件）。"
+    },
+    {
+        "question": "### 试题 31:\n\nChoose three. Which three statements are true about MySQL Enterprise Firewall?",
+        "selections": {
+            "A": "On Windows systems, it is controlled and managed using the Windows Internet Connection Firewall control panel.",
+            "B": "System tables named firewall_users and firewall_whitelist in the mysql database provide persistent storage of firewall data.",
+            "C": "It is available only in MySQL Enterprise versions.",
+            "D": "It provides INFORMATION_SCHEMA tables that enable views into firewall data.",
+            "E": "Firewall functionality is dependent on SHA-256 and ANSI-specific functions built in to the mysql.firewall table.",
+            "F": "It shows only notifications for blocked connections, which originated outside of your network's primary domain."
+        },
+        "answers": [
+            "B",
+            "C",
+            "D"
+        ],
+        "summary": "### 选项分析与考点总结\n\n**选项分析:**\nMySQL Enterprise Firewall 是一种应用层防火墙，用于监控和限制特定用户账户可执行的SQL语句。\nB) 防火墙的配置数据（如注册的用户、模式、白名单规则）持久化存储在`mysql`数据库的系统表中，例如`firewall_users`（存储用户和模式）和`firewall_whitelist`（存储规则）。这些表在MySQL 8.0中可能是类似名称的内部数据字典表 (B 正确)。\nC) MySQL Enterprise Firewall 是MySQL企业版提供的商业特性，在社区版中不可用 (C 正确)。\nD) MySQL Enterprise Firewall 提供了`INFORMATION_SCHEMA`下的视图（如`MYSQL_FIREWALL_USERS`, `MYSQL_FIREWALL_WHITELIST`）来方便用户查询和监控防火墙的状态和配置数据 (D 正确)。\n\n错误选项分析：\nA) MySQL Enterprise Firewall 是MySQL服务器内部的功能，其管理通过SQL接口（如存储过程`mysql.sp_set_firewall_mode`）或MySQL Enterprise Monitor进行，与Windows操作系统自带的防火墙控制面板无关。\nE) 防火墙功能的核心是SQL语句模式匹配和白名单管理，不依赖于特定的SHA-256或ANSI函数内置于`mysql.firewall`表（表名可能不准确，且功能实现并非如此）。规则的存储和匹配有其自身的逻辑。\nF) 防火墙可以记录和通知所有被阻止的连接或查询，而不仅仅是来自特定网络域外部的连接。其监控范围是基于注册的MySQL用户账户，而非网络来源。\n\n**考点总结:**\n此题考察对MySQL Enterprise Firewall的基本特性、可用性、数据存储和监控方式的理解。关键点在于它是企业版功能，通过内部表存储配置，并提供Information Schema视图进行访问。",
+        "suggestion": "### 应试技巧与学习建议\n\n**应试技巧:**\n区分MySQL Enterprise Firewall与操作系统防火墙或网络防火墙。记住它是MySQL的一个高级安全特性，与特定版本（企业版）相关联。了解其数据如何持久化以及如何被用户查看。\n\n**学习建议:**\n学习MySQL Enterprise Firewall的工作原理、配置步骤（注册用户、训练模式、保护模式）、管理方法以及如何监控其活动。熟悉相关的存储过程和Information Schema视图。了解其在防止SQL注入和未授权数据访问方面的作用。"
+    },
+    {
+        "question": "### 试题 32:\n\nChoose two. Which two storage engines provide a view of the data consistent with the storage system at any moment?",
+        "selections": {
+            "A": "InnoDB",
+            "B": "ARCHIVE",
+            "C": "MyISAM",
+            "D": "MEMORY",
+            "E": "NDB"
+        },
+        "answers": [
+            "A",
+            "E"
+        ],
+        "summary": "### 选项分析与考点总结\n\n**选项分析:**\n“在任何时刻提供与存储系统一致的数据视图”通常指的是事务型存储引擎提供的ACID特性，特别是原子性（Atomicity）、一致性（Consistency）和隔离性（Isolation）。\nA) InnoDB：是MySQL默认的事务型存储引擎，完全支持ACID特性，通过MVCC（多版本并发控制）为不同事务提供一致性的数据视图 (A 正确)。\nE) NDB (MySQL Cluster)：是MySQL Cluster使用的存储引擎，也是一个完全支持ACID的事务型存储引擎，设计用于高可用和分布式环境，保证数据一致性 (E 正确)。\n\n错误选项分析：\nB) ARCHIVE：用于存储大量归档数据，支持压缩，但不支持事务，也不支持索引（除了自增ID）。它不保证复杂查询的一致性视图。\nC) MyISAM：是非事务型存储引擎。它不支持事务、行级锁或MVCC。在高并发读写情况下，数据一致性视图难以保证，可能发生脏读等问题。\nD) MEMORY (HEAP)：是内存表存储引擎，数据存储在内存中。它不支持事务（虽然某些操作可能是原子性的），并且在服务器重启后数据会丢失。它不提供严格的MVCC或跨事务的一致性视图。\n\n**考点总结:**\n此题考察对MySQL不同存储引擎事务特性和数据一致性保证的理解。核心在于识别哪些引擎是事务安全的并能提供MVCC等机制来确保一致性视图。",
+        "suggestion": "### 应试技巧与学习建议\n\n**应试技巧:**\n将“一致的数据视图”与ACID特性（特别是事务和隔离级别）联系起来。回忆哪些存储引擎是事务型的。\n\n**学习建议:**\n详细学习MySQL中主要的存储引擎，如InnoDB, MyISAM, NDB, MEMORY, ARCHIVE, CSV等。重点掌握它们各自的特性、优点、缺点、适用场景，特别是对事务、锁机制（表锁/行锁）、MVCC、外键、全文索引等的支持情况。"
+    },
+    {
+        "question": "### 试题 33:\n\nChoose three. Which three are requirements for a secure MySQL Server environment?",
+        "selections": {
+            "A": "Minimize the number of non-MySQL Server-related processes running on the server host.",
+            "B": "Restrict the number of OS users that have access at the OS level.",
+            "C": "Ensure appropriate file system privileges for OS users and groups.",
+            "D": "Keep the entire software stack on one OS host.",
+            "E": "Encrypt the file system to avoid needing exact file-system permissions.",
+            "F": "Run MySQL server as the root user to prevent incorrect sudo settings."
+        },
+        "answers": [
+            "A",
+            "B",
+            "C"
+        ],
+        "summary": "### 选项分析与考点总结\n\n**选项分析:**\n确保MySQL服务器环境的安全涉及多个层面，包括操作系统安全和MySQL自身安全。\nA) 最小化服务器主机上运行的非MySQL相关进程数量。这减少了潜在的攻击面和资源竞争，是服务器安全加固的一般原则 (A 正确，此处OCR标记为错误，但根据安全最佳实践应为正确)。\nB) 限制在操作系统级别拥有访问权限（特别是对MySQL数据目录或配置文件有权限）的OS用户数量。最小化特权OS用户，减少内部威胁或账户泄露的风险 (B 正确)。\nC) 为OS用户和组确保适当的文件系统权限。特别是MySQL数据目录、日志文件、配置文件等，应该严格限制访问权限，通常只允许`mysql`操作系统用户访问 (C 正确)。\n\n错误或不完全准确的选项分析：\nD) “将整个软件栈保留在一个OS主机上”本身不是一个安全要求。分布式架构或服务分离有时可以增强安全性或弹性。关注点应在于每个组件的安全配置，而非是否在同一主机。\nE) 文件系统加密是一种有用的安全措施，可以保护静态数据。但它不能完全替代正确的文件系统权限设置。权限控制了谁（用户/进程）可以对文件进行何种操作（读/写/执行），这是与加密不同的安全层面。\nF) 绝对不能以`root`操作系统用户身份运行MySQL服务器。这会带来巨大的安全风险，一旦MySQL进程被攻破，攻击者将获得整个系统的root权限。MySQL应该以专用的、低权限的`mysql`用户运行。`sudo`设置是为了让授权用户以root权限执行特定命令，与MySQL运行用户是两回事。\n\n**考点总结:**\n此题考察MySQL服务器运行环境的整体安全要求。遵循最小权限原则、减少攻击面、以及正确配置操作系统和文件系统权限是关键。\n\n**答案修正说明:** 根据安全最佳实践，A选项“Minimize the number of non-MySQL Server-related processes running on the server host”是一个重要的安全措施。因此，正确的答案组合应该是A, B, C。",
+        "suggestion": "### 应试技巧与学习建议\n\n**应试技巧:**\n从“纵深防御”和“最小权限”的角度思考。安全不仅仅是MySQL本身的配置，还包括其运行的操作系统环境。排除那些明显违反安全原则（如以root运行）或与安全目标不直接相关的选项。\n\n**学习建议:**\n学习MySQL安全部署的最佳实践，这包括：\n1.  操作系统加固：最小化安装、禁用不必要的服务和进程、定期打补丁。\n2.  MySQL运行用户：使用专用的低权限`mysql`用户运行服务。\n3.  文件系统权限：严格限制对MySQL数据目录、配置文件、日志文件的访问。\n4.  网络安全：防火墙配置、`bind-address`、禁用不必要的网络协议。\n5.  MySQL内部安全：强密码策略、用户账户权限最小化、定期审计、使用SSL/TLS加密连接等。"
+    },
+    {
+        "question": "### 试题 34:\n\nChoose two. Examine this list of MySQL data directory binary logs: `binlog.000001 binlog.000002 ... binlog.000289 binlog.000300 binlog.000301 binlog.index`\nNow examine this command, which executes successfully: `mysqldump --delete-master-logs --all-databases > /backup/db_backup.sql`\nWhich two are true?",
+        "selections": {
+            "A": "All databases are backed up to the output file.",
+            "B": "All non-active binary logs are removed from the master.",
+            "C": "All binary logs are backed up and then deleted.",
+            "D": "All binary logs are deleted from the master.",
+            "E": "All databases, excluding master metadata, are backed up to the output file.",
+            "F": "All details regarding deleted logs and master metadata are captured in the output file."
+        },
+        "answers": [
+            "A",
+            "B"
+        ],
+        "summary": "### 选项分析与考点总结\n\n**选项分析:**\n`mysqldump --delete-master-logs --all-databases > /backup/db_backup.sql` 命令的作用：\n1.  `--all-databases`: 备份所有数据库的结构和数据到指定的输出文件。\n2.  `--delete-master-logs`: 在成功完成dump操作后，会删除主服务器上那些在dump开始时刻之前已经不再活动的二进制日志文件。它不会删除当前正在写入的活动binlog文件，也不会删除dump期间新产生的binlog文件。\n\nA) 所有数据库都被备份到输出文件。这是`--all-databases`选项的作用 (A 正确)。\nB) 所有非活动的二进制日志（即那些在备份开始时已经关闭并且内容已完全包含在备份中的旧日志）会从主服务器上被移除。这对应`--delete-master-logs`的行为 (B 正确)。\n\n错误选项分析：\nC) 二进制日志本身不被“备份”（即复制其内容到备份文件）。`mysqldump`是逻辑备份，备份的是数据库内容。`--delete-master-logs`只是删除文件。\nD) 不是所有二进制日志都被删除。当前活动的binlog和在dump期间新生成的binlog不会被删除。\nE) `--all-databases`通常包含了主数据库的元数据信息（如存储过程、函数、事件等）。“排除主元数据”是不准确的。而且，`mysqldump`关注的是数据库内容，而不是主服务器二进制日志的元数据。\nF) 输出文件 `/backup/db_backup.sql` 主要包含SQL语句来重建数据库。它会包含记录备份时binlog位置点的信息（例如，通过`--master-data`选项，虽然本题未明确使用，但`--delete-master-logs`通常与之配合），但不会包含“已删除日志的详细信息”。\n\n**考点总结:**\n此题考察对`mysqldump`命令中`--all-databases`和`--delete-master-logs`选项的理解。关键在于区分备份内容和日志清理行为，以及日志清理的范围（仅限非活动日志）。",
+        "suggestion": "### 应试技巧与学习建议\n\n**应试技巧:**\n准确理解`mysqldump`的各个选项含义。`--delete-master-logs`是一个清理操作，不是备份操作。注意其清理范围的精确性。\n\n**学习建议:**\n熟练掌握`mysqldump`工具的使用，包括常用选项如`--all-databases`, `--databases`, `--single-transaction`, `--master-data`, `--routines`, `--events`, `--triggers`, `--hex-blob`, `--delete-master-logs`, `PURGE BINARY LOGS` SQL命令等。理解逻辑备份和物理备份的区别。学习如何制定合理的备份和日志管理策略。"
+    },
+    {
+        "question": "### 试题 35:\n\nYou want to install and configure MySQL on Linux server with tarball binaries in the `/app/mysql/` directory, where the bin directory is found at `/app/mysql/bin` and the data directory at `/app/data`. Which two parameters are required to configure the MySQL instance?",
+        "selections": {
+            "A": "The configuration basedir=/app/mysql is needed.",
+            "B": "The configuration datadir=/app/data is needed.",
+            "C": "The configuration log-bin=/app/data is needed.",
+            "D": "The configuration datadir=/app/mysql/data is needed",
+            "E": "The configuration innodb_log_group_home_dir=/datadir is needed.",
+            "F": "The configuration basedir=/app/mysql/bin is needed."
+        },
+        "answers": [
+            "A",
+            "B"
+        ],
+        "summary": "### 选项分析与考点总结\n\n**选项分析:**\n在通过tarball二进制包安装MySQL时，通常需要在配置文件（如`my.cnf`）中或在初始化命令中指定关键路径参数。\n- `basedir`: MySQL的安装基础目录，即包含`bin`, `lib`, `share`等子目录的顶级目录。根据题意，这是`/app/mysql/`。\n- `datadir`: MySQL的数据存储目录，用于存放数据库文件、日志文件等。根据题意，这是`/app/data/`。\n\nA) `basedir=/app/mysql` 是正确的，因为MySQL的`bin`目录位于`/app/mysql/bin`，所以`/app/mysql`是基础安装目录 (A 正确)。\nB) `datadir=/app/data` 是正确的，题目明确指出数据目录在`/app/data` (B 正确)。\n\n错误选项分析：\nC) `log-bin=/app/data`：虽然可以将二进制日志放在数据目录中（或者其子目录），但这本身不是一个“必需”的配置参数来启动和运行MySQL实例。是否启用二进制日志取决于需求。\nD) `datadir=/app/mysql/data`：这与题目给出的数据目录 `/app/data` 不符。\nE) `innodb_log_group_home_dir=/datadir`：这指的是InnoDB redo日志的存放目录。如果未指定，默认是在`datadir`下。它也不是启动MySQL实例的绝对必需参数（除非想将其放到`datadir`之外）。且这里的`/datadir`是一个占位符，不是具体路径。\nF) `basedir=/app/mysql/bin`：`basedir`应该是包含`bin`目录的父目录，而不是`bin`目录本身。\n\n**考点总结:**\n此题考察MySQL通过tarball安装时的基本配置要求，特别是`basedir`和`datadir`这两个核心路径参数的设定。",
+        "suggestion": "### 应试技巧与学习建议\n\n**应试技巧:**\n理解`basedir`和`datadir`的含义和区别。`basedir`指向软件安装的根，`datadir`指向数据的存储位置。根据题目描述的目录结构来确定正确的值。\n\n**学习建议:**\n学习MySQL的不同安装方式（如RPM/DEB包、tarball二进制、源码编译）。掌握通过tarball安装的步骤，包括解压、创建`mysql`用户和组、初始化数据目录（使用`mysqld --initialize`）、配置`my.cnf`文件（特别是`basedir`和`datadir`）、启动服务器、设置root密码等。了解MySQL服务器启动时如何查找和使用这些路径参数。"
+    },
+    {
+        "question": "### 试题 36:\n\nA valid raw backup of the `shop.customers` MyISAM table was taken. You must restore the table. You begin with these steps:\n1. Confirm that `secure_file_priv='/var/tmp'`\n2. `mysql> DROP TABLE shop.customers;`\n3. `shell> cp /backup/customers.MY* /var/lib/mysql/shop/`\nWhich two actions are required to complete the restore? (Choose two.)",
+        "selections": {
+            "A": "shell> cp /backup/customers.sdi /var/tmp",
+            "B": "shell> cp /backup/customers.sdi /var/lib/mysql/shop/",
+            "C": "mysql> SOURCE '/var/tmp/customers.sdi'",
+            "D": "mysql> IMPORT TABLE FROM '/var/tmp/customers.sdi'",
+            "E": "shell> cp /backup/customers.frm /var/lib/mysql/shop/",
+            "F": "mysql> IMPORT TABLE FROM '/var/lib/mysql/shop/customers.sdi'",
+            "G": "mysql> ALTER TABLE shop.customers IMPORT TABLESPACE",
+            "H": "mysql> ALTER TABLE shop.customers DISCARD TABLESPACE"
+        },
+        "answers": [
+            "A",
+            "D"
+        ],
+        "summary": "### 选项分析与考点总结\n\n**选项分析:**\n题目描述的是恢复一个MyISAM表，并且提到了`.sdi`文件和`secure_file_priv`。这暗示了可能使用MySQL 8.0引入的基于SDI（Serialized Dictionary Information）文件的导入功能，尽管MyISAM表的元数据传统上存储在`.frm`文件中。\n然而，传统的MyISAM表恢复，在复制了`.MYD`（数据）和`.MYI`（索引）文件后，还需要表定义文件`.frm`。\n\n考虑到选项中出现了`IMPORT TABLE FROM`和`.sdi`文件，我们假设题目环境是MySQL 8.0+，并且备份可能包含了`.sdi`文件。\n`IMPORT TABLE FROM`语句用于从`.sdi`文件导入表定义。\n步骤3复制了`customers.MY*`（即`customers.MYD`和`customers.MYI`）到数据目录。现在需要恢复表结构。\n\nA) `shell> cp /backup/customers.sdi /var/tmp`：将SDI文件复制到`secure_file_priv`指定的目录 `/var/tmp`。这是因为`IMPORT TABLE FROM`需要从一个MySQL服务器可安全访问的位置读取SDI文件 (A 正确)。\nD) `mysql> IMPORT TABLE FROM '/var/tmp/customers.sdi';`：在MySQL中执行此命令，从位于`/var/tmp`的SDI文件导入表结构。这会创建表定义，并关联到已复制到数据目录的`.MYD`和`.MYI`文件 (D 正确)。\n\n如果题目意图是传统的MyISAM恢复（不使用SDI导入）：\n那么应该是E) `shell> cp /backup/customers.frm /var/lib/mysql/shop/`，然后可能需要`FLUSH TABLES;`。\n\n但是，鉴于`secure_file_priv`的提及和`IMPORT TABLE FROM`选项的存在，基于SDI的恢复流程是更有可能的考点。\n\n错误选项分析（基于SDI流程）：\nB) SDI文件不需要复制到MySQL的数据目录中给`IMPORT TABLE FROM`使用，而是复制到`secure_file_priv`指定的目录。\nC) `SOURCE`命令用于执行SQL脚本文件，不是导入SDI文件。\nE) 如果使用SDI导入，则不需要单独复制`.frm`文件。\nF) `IMPORT TABLE FROM`后面直接跟SDI文件的完整路径，而不是表名。\nG, H) `IMPORT TABLESPACE`和`DISCARD TABLESPACE`是用于InnoDB表空间传输的，与MyISAM表或SDI导入无关。\n\n**考点总结:**\n此题可能考察MySQL 8.0中基于SDI文件的表结构导入，或者传统的MyISAM表文件恢复。根据`secure_file_priv`和`IMPORT TABLE FROM`的提示，SDI导入流程是主要考点。这要求将SDI文件放到安全路径，然后使用SQL命令导入。",
+        "suggestion": "### 应试技巧与学习建议\n\n**应试技巧:**\n注意题目中给出的所有线索，如`secure_file_priv`和特定SQL命令的出现。这有助于判断题目背景和可能的解决方案。区分不同存储引擎的备份恢复方法。\n\n**学习建议:**\n学习MySQL 8.0中引入的SDI（Serialized Dictionary Information）及其在备份恢复（特别是与`mysqldump`和传输表空间）中的作用。了解`IMPORT TABLE FROM`语句的使用方法。同时也要掌握传统MyISAM表（`.frm`, `.MYD`, `.MYI`文件）的备份和恢复步骤。理解`secure_file_priv`系统变量的含义和限制。"
+    },
+    {
+        "question": "### 试题 37:\n\nChoose two. You are investigating performance problems in a MySQL database; all data fits in memory. You determine that SELECT queries to one table is the main cause for poor response times. Which two have the biggest potential for eliminating the problem?",
+        "selections": {
+            "A": "high concurrency",
+            "B": "operating system resources",
+            "C": "column definitions",
+            "D": "innodb mutexes",
+            "E": "non-transaction storage engine",
+            "F": "table indexes"
+        },
+        "answers": [
+            "A",
+            "E"
+        ],
+        "summary": "### 选项分析与考点总结\n\n**选项分析:**\n问题是`SELECT`查询响应慢，且所有数据都在内存中。这意味着磁盘I/O不是瓶颈。\n需要寻找可能导致CPU瓶颈、锁争用或查询本身效率低下的原因。\n\nE) 如果该表使用的是非事务性存储引擎（如MyISAM），它可能使用表级锁。高并发的`SELECT`查询（即使是读操作）可能会因为其他写操作（或某些读操作）持有表锁而等待，导致响应时间变慢。将其改为支持行级锁和MVCC的事务性引擎（如InnoDB）可以显著改善并发`SELECT`性能 (E 选项指出非事务存储引擎是一个问题，暗示改为事务引擎是解决方案，因此E本身指出了一个**潜在原因**)。\nA) 高并发本身是导致性能问题的常见场景。即使数据在内存中，大量的并发查询也可能导致CPU竞争、上下文切换开销、或者在存储引擎内部（如InnoDB的latch/mutex争用）产生瓶颈 (A 指出了一个**潜在原因**)。\n\n错误或间接相关的选项分析：\nB) 操作系统资源：虽然CPU是OS资源的一部分，但该选项过于宽泛。如果特指CPU耗尽，那与A（高并发）相关。\nC) 列定义：不合适的列定义（如使用过大的数据类型）会增加内存消耗和CPU处理（如比较、转换），但通常不是`SELECT`慢的主要原因，除非它们导致了非常低效的查询计划（例如，无法使用索引）。\nD) InnoDB互斥锁（mutexes）：如果表是InnoDB，并且在高并发下确实存在内部互斥锁争用，这会导致性能下降。但这个选项太具体，而A（高并发）是更上层的原因，E（存储引擎类型）则是可能导致锁问题的基础。\nF) 表索引：如果查询没有合适的索引，或者索引选择不当，会导致全表扫描或低效的索引扫描，即使数据在内存中，CPU开销也会很大。**这是`SELECT`查询慢的最常见和最直接原因。** 然而，题目要求选择“两个最大的潜力”。如果E和A是更根本的架构或并发问题，解决它们可能带来更大范围的改善。\n\n**答案考量:**\n题目问“消除问题最大的潜力”。\n- 如果存储引擎是 MyISAM (E)，改为 InnoDB 能解决表锁问题，对并发`SELECT`有巨大提升。\n- 高并发 (A) 场景下，即使是 InnoDB，也可能需要优化查询、调整并发控制参数或扩展硬件来应对。\n- 索引 (F) 的优化是针对特定查询的，如果多个慢查询都指向一个表，且都是因为索引问题，那么优化索引潜力巨大。\n\n在许多情况下，索引(F)的缺失或不当是SELECT慢的首要原因。如果假设索引已经存在但仍慢，那么并发(A)和存储引擎特性(E)就成了主要考虑因素。原答案选择了A和E，可能是从更宏观或架构层面考虑。如果索引非常糟糕，F的潜力可能最大。\n\n**考点总结:**\n此题考察对SELECT查询性能瓶颈的诊断。当数据在内存中时，瓶颈通常转向CPU、锁争用或查询计划本身。需要考虑并发级别、存储引擎特性和索引优化。",
+        "suggestion": "### 应试技巧与学习建议\n\n**应试技巧:**\n当题目说数据全在内存时，首先排除磁盘I/O瓶颈。然后分析查询慢的可能原因：\n1.  查询本身是否高效（索引是否使用得当）？\n2.  是否存在锁争用（表级锁 vs 行级锁）？\n3.  并发量是否过大导致CPU或其他资源竞争？\n选择那些能从根本上改变查询执行方式或并发处理能力的选项。\n\n**学习建议:**\n深入学习MySQL查询优化，特别是索引的设计和使用（选择合适的索引类型、覆盖索引、避免全表扫描、理解`EXPLAIN`输出）。学习不同存储引擎的锁机制及其对并发性能的影响。了解如何诊断和解决高并发下的性能问题，包括CPU分析、锁监控、InnoDB内部争用等。"
+    },
+    {
+        "question": "### 试题 38:\n\nChoose two. You have semi-synchronous replication configured and working with one slave. `rpl_semi_sync_master_timeout` has never been reached. You find that the disk system on the master has failed and as a result, the data on the master is completely unrecoverable.\nWhich two statements are true?",
+        "selections": {
+            "A": "The slave automatically identifies that the master is unreachable and performs any required actions so that applications can start using the slave as the new master.",
+            "B": "Reads from the slave can return outdated data until the value of the rpl_semi_sync_master_timeout variable is reached.",
+            "C": "No committed transactions are lost.",
+            "D": "Reads from the slave can return outdated data for some time, until it applies all transactions from its relay log.",
+            "E": "A small amount of committed transactions may be lost in case they were committed just before the disk failure.",
+            "F": "As soon as the incident happens, application can read data from the slave and rely on it to return a full and current set of data."
+        },
+        "answers": [
+            "C",
+            "D"
+        ],
+        "summary": "### 选项分析与考点总结\n\n**选项分析:**\n半同步复制（Semi-synchronous replication）的机制是：主库在提交事务后，会等待至少一个从库确认已接收到该事务的binlog事件，然后主库才会将结果返回给客户端。`rpl_semi_sync_master_timeout`是主库等待从库确认的超时时间，如果超时，主库会自动转为异步复制。题目说这个超时“从未到达”，意味着在主库磁盘故障之前，所有在主库上成功提交并返回给客户端的事务，其binlog事件都已经被从库接收到了。\n\nC) 没有已提交的事务丢失。因为半同步保证了事务在主库提交（并返回给客户端）前，其binlog已被从库接收。所以从库上拥有所有主库已成功提交的事务数据 (C 正确)。\nD) 从库上的读操作可能会返回过时的数据，直到它应用完其中继日志（relay log）中所有已接收的事务。从库的I/O线程负责接收binlog到relay log，SQL线程负责应用relay log中的事件。在SQL线程应用完毕之前，从库的数据状态可能落后于其relay log中最新接收到的事件 (D 正确)。\n\n错误选项分析：\nA) 从库不会“自动”识别主库不可达并“自动”执行故障转移成为新主库。故障转移通常需要外部工具（如MHA, Orchestrator, InnoDB Cluster）或手动操作。\nB) `rpl_semi_sync_master_timeout`是主库端的设置，与从库数据是否过时以及何时更新没有直接关系。从库数据是否过时取决于SQL线程的应用进度。\nE) 因为半同步的保证，在主库磁盘故障前“已提交”的事务（即客户端已收到成功响应），其binlog已被从库接收，所以不会丢失。如果事务在主库本地提交了但还未等从库确认就发生了磁盘故障（且客户端未收到成功响应），那这个事务在主库上本身就是未完成的，谈不上“丢失已提交事务”。\nF) 从库数据不一定是“完全和当前的”。如D所述，SQL线程可能仍在应用中继日志，所以数据可能不是最新的。应用需要知道从库可能存在一定的复制延迟。\n\n**考点总结:**\n此题考察对半同步复制工作原理和数据一致性保证的理解。核心在于半同步复制通过等待从库确认来减少数据丢失的风险，但它不保证零数据丢失（例如，如果主库在等待确认时崩溃，而从库也恰好在那时崩溃）。题目中“超时从未到达”是一个关键条件。",
+        "suggestion": "### 应试技巧与学习建议\n\n**应试技巧:**\n理解半同步复制与异步复制的关键区别——主库会等待从库的ACK。关注“超时从未到达”这个条件，它简化了数据丢失的分析。区分数据接收（I/O线程到relay log）和数据应用（SQL线程到数据库）。\n\n**学习建议:**\n深入学习MySQL半同步复制的配置、工作流程、参数（如`rpl_semi_sync_master_enabled`, `rpl_semi_sync_slave_enabled`, `rpl_semi_sync_master_timeout`, `rpl_semi_sync_master_wait_for_slave_count`）。了解其优缺点，以及它在“有损半同步”（AFTER_SYNC）和“无损半同步”（AFTER_COMMIT，MySQL 8.0.20+，但题目场景更像AFTER_SYNC）下的行为差异。学习故障转移的概念和常见实现方案。"
+    },
+    {
+        "question": "### 试题 39:\n\nChoose three. You are considering using file-system snapshots to back up MySQL.\nWhich three statements are true?",
+        "selections": {
+            "A": "There is a slight performance cost while the snapshot is active.",
+            "B": "The backup window is almost zero from the perspective of the application.",
+            "C": "They allow direct copying of table rows with operating system copy commands.",
+            "D": "They do not back up views, stored procedures, or configuration files.",
+            "E": "They take roughly twice as long as logical backups.",
+            "F": "They work best for transaction storage engines that can perform their own recovery when restored.",
+            "G": "They do not use additional disk space."
+        },
+        "answers": [
+            "A",
+            "B",
+            "F"
+        ],
+        "summary": "### 选项分析与考点总结\n\n**选项分析:**\n文件系统快照（如LVM快照、ZFS快照等）是一种物理备份方法，它在某个时间点创建文件系统的一致性副本。\nA) 在快照创建和维护期间，通常会有轻微的性能开销，因为文件系统需要跟踪原始卷和快照卷之间的块变化（例如，使用写时复制Copy-on-Write机制） (A 正确)。\nB) 从应用程序的角度看，创建快照本身的操作非常快，通常在秒级完成。这意味着数据库服务几乎不需要暂停或锁定很长时间，备份窗口非常小 (B 正确)。\nF) 文件系统快照是物理备份，恢复时是将整个数据文件恢复到快照创建时的状态。事务性存储引擎（如InnoDB）在启动时会进行崩溃恢复，应用redo log中未完成的事务并回滚未提交的事务，从而使数据库达到一个一致的状态。因此，快照备份对于能够进行自我恢复的事务性引擎效果最好 (F 正确)。\n\n错误选项分析：\nC) 文件系统快照是对整个文件系统或卷的块级复制，而不是直接复制“表行”。恢复后，数据库通过其内部机制（如InnoDB的崩溃恢复）来整理数据。\nD) 文件系统快照备份的是MySQL数据目录下的所有文件。如果视图定义、存储过程（通常存储在数据字典或系统表中，这些也是数据目录的一部分）以及配置文件（如果也位于被快照的卷上）都在这个范围内，它们会被一并备份。但配置文件通常在数据目录之外。\nE) 快照创建非常快。备份时间主要取决于从快照复制数据到备份介质的时间。与逻辑备份（如`mysqldump`，需要扫描和转换数据）相比，其速度取决于具体实现和数据量，不一定是“两倍长”，甚至可能更快（特别是对于大数据量）。\nG) 快照本身（特别是写时复制快照）初始时可能只占用少量元数据空间。但随着原始卷数据的修改，快照会开始占用额外的磁盘空间来存储旧的数据块。所以说“不使用额外磁盘空间”是不准确的。\n\n**考点总结:**\n此题考察对使用文件系统快照进行MySQL物理备份的理解。关键点包括快照的创建速度、对应用的影响、性能开销、对存储引擎的要求以及空间占用。",
+        "suggestion": "### 应试技巧与学习建议\n\n**应试技巧:**\n理解文件系统快照的基本原理（如写时复制）。将其与逻辑备份（如`mysqldump`）和InnoDB的热物理备份（如MySQL Enterprise Backup, Percona XtraBackup）进行对比。关注快照在创建速度、一致性保证和恢复过程方面的特点。\n\n**学习建议:**\n学习不同的MySQL备份方法及其优缺点。了解如何结合文件系统快照（如LVM）与MySQL的`FLUSH TABLES WITH READ LOCK`（或不锁而依赖InnoDB崩溃恢复）来创建一致性备份。熟悉使用快照备份时，对事务性存储引擎（特别是InnoDB）进行恢复的步骤和注意事项。"
+    },
+    {
+        "question": "### 试题 40:\n\nChoose two. Which two commands will display indexes on the `parts` table in the `manufacturing` schema?",
+        "selections": {
+            "A": "EXPLAIN manufacturing.parts;",
+            "B": "SELECT * FROM information_schema.statistics WHERE table_schema = 'manufacturing' AND TABLE_NAME = 'parts';",
+            "C": "DESCRIBE manufacturing.parts;",
+            "D": "SHOW INDEXES FROM manufacturing.parts;",
+            "E": "SELECT * FROM information_schema.COLUMN_STATISTICS;"
+        },
+        "answers": [
+            "C",
+            "D"
+        ],
+        "summary": "### 选项分析与考点总结\n\n**选项分析:**\n有多种方法可以查看表的索引信息：\nC) `DESCRIBE manufacturing.parts;` (或 `DESC manufacturing.parts;`, `EXPLAIN manufacturing.parts;`)：这个命令会显示表的列信息，其中 `Key` 列会指示哪些列是索引的一部分（如PRI为主键，UNI为唯一索引，MUL为普通索引） (C 正确)。\nD) `SHOW INDEXES FROM manufacturing.parts;` (或 `SHOW INDEX FROM manufacturing.parts;`)：这个命令专门用于显示指定表上的所有索引的详细信息，包括索引名、列名、唯一性、基数等 (D 正确)。\n\n错误选项分析：\nA) OCR中将`EXPLAIN`命令与选项D的注释`['description', 'EXPLAIN']`混淆。单独的`EXPLAIN manufacturing.parts;` 等同于 `DESCRIBE manufacturing.parts;`，可以显示索引信息。如果将此视为一个独立选项，则也正确。但通常`DESCRIBE`更直接。\nB) `SELECT * FROM information_schema.statistics WHERE table_schema = 'manufacturing' AND TABLE_NAME = 'parts';`：这个查询确实可以从`information_schema.statistics`表中获取索引信息，但题目通常倾向于更直接的SQL命令。此选项在OCR中标记为错误，可能是因为题目期望的是`SHOW`或`DESCRIBE`这类简便命令。但从功能上讲，它是可以获取索引信息的。\nE) `information_schema.COLUMN_STATISTICS` 存储的是列的统计信息（如直方图），用于查询优化，不直接显示索引定义。\n\n**考点总结:**\n此题考察查看MySQL表索引信息的常用命令。`SHOW INDEXES` 和 `DESCRIBE` (或 `EXPLAIN table_name`) 是最直接和常用的方法。通过`INFORMATION_SCHEMA`查询也是一种方式，但更底层和详细。",
+        "suggestion": "### 应试技巧与学习建议\n\n**应试技巧:**\n记住显示表结构和索引的几个常用命令。`SHOW INDEXES` 最为直接明了。`DESCRIBE` 也能提供索引线索。当题目要求“命令”时，优先考虑SQL管理命令而非直接查询系统表（除非特定场景）。\n\n**学习建议:**\n熟练掌握 `SHOW CREATE TABLE table_name;`, `DESCRIBE table_name;`, `SHOW INDEXES FROM table_name;` 等命令的使用。了解`INFORMATION_SCHEMA`数据库中与元数据相关的表，如`TABLES`, `COLUMNS`, `STATISTICS`, `KEY_COLUMN_USAGE`等，知道如何通过查询它们来获取更详细或定制化的信息。"
+    },
+    {
+        "question": "### 试题 41:\n\nOn examination, your MySQL installation datadir has become recursively world (所有用户) read/write/executable. What are two major concerns of running an installation with incorrect file privileges?",
+        "selections": {
+            "A": "Data files could be deleted. (datafiles)",
+            "B": "Users could overwrite configuration files. (mysqld-auto.cnf)",
+            "C": "SQL injections could be used to insert bad data into the database.",
+            "D": "Extra startup time would be required for the MySQL server to reset the privileges."
+        },
+        "answers": [
+            "A",
+            "B"
+        ],
+        "summary": "### 选项分析与考点总结\n\n**选项分析:**\nMySQL数据目录（datadir）的权限被设置为对所有用户可读、可写、可执行（通常是777权限），这是一个严重的安全漏洞。\nA) 数据文件可能被删除：由于所有用户都有写权限，任何能够访问该文件系统的用户（包括恶意的本地用户或通过其他漏洞获得访问权限的远程用户）都可以删除或修改数据文件，导致数据丢失或损坏 (A 正确)。\nB) 用户可能覆盖配置文件：配置文件（如`my.cnf`，或者在数据目录下的`mysqld-auto.cnf`）如果也具有过于宽松的权限，可能被未授权用户修改。修改配置文件可能导致服务器无法启动、行为异常或引入更多安全漏洞 (B 正确)。\n\n错误选项分析：\nC) SQL注入是应用层面的漏洞，利用的是应用程序在构造SQL查询时未正确处理用户输入。虽然不正确的文件权限会加剧被攻击后的损害程度（例如，攻击者通过SQL注入获得执行OS命令的权限后，可以利用宽松的文件权限进行更多破坏），但文件权限本身不直接导致SQL注入漏洞的产生。\nD) MySQL服务器启动时不会自动“重置文件权限”。文件权限是由操作系统管理的。如果权限不正确，MySQL服务器可能会因为无法安全运行而拒绝启动，或者在不安全的状态下运行。但它不会花额外时间去“重置”操作系统的文件权限。\nE) (未完整显示在OCR中，但从上下文推测) MySQL二进制文件（通常在`basedir`下，而非`datadir`）如果权限不当，也可能被损坏、删除或替换。但题目特指`datadir`的权限问题。\n\n**考点总结:**\n此题考察不正确的文件系统权限（特别是对MySQL数据目录）所带来的安全风险。核心在于数据和配置的机密性、完整性和可用性受到威胁。",
+        "suggestion": "### 应试技巧与学习建议\n\n**应试技巧:**\n理解Linux文件权限（读、写、执行）的含义及其组合。当权限过于宽松时，思考可能发生的最坏情况，特别是针对敏感数据和关键配置文件。区分文件系统层面的安全问题和应用层面的安全问题（如SQL注入）。\n\n**学习建议:**\n学习MySQL安全部署的最佳实践，其中重要的一环就是正确设置文件和目录的权限。通常，MySQL数据目录及其内容应该只允许`mysql`操作系统用户拥有读写权限，其他用户不应有访问权限。配置文件也应类似保护。了解如何使用`chown`和`chmod`命令来设置正确的权限。"
+    },
+    {
+        "question": "### 试题 42:\n\nChoose three. Which three requirements must be enabled for group replication?",
+        "selections": {
+            "A": "replication filters",
+            "B": "semi-sync replication plugin",
+            "C": "slave updates logging",
+            "D": "binary log checksum",
+            "E": "primary key or primary key equivalent on every table",
+            "F": "binary log MIXED format",
+            "G": "binary log ROW format"
+        },
+        "answers": [
+            "C",
+            "E",
+            "G"
+        ],
+        "summary": "### 选项分析与考点总结\n\n**选项分析:**\nMySQL组复制 (Group Replication) 对服务器配置有一些特定要求：\nC) `log_slave_updates` (或 `log_replica_updates` 在新版本中) 必须启用。这确保了从其他成员复制过来的更改也会被记录到当前成员的二进制日志中，这对于维持组成员之间的一致性和允许其他从库从组成员进行复制是必要的 (C 正确)。\nE) 参与组复制的所有表都必须有一个主键，或者在没有显式主键的情况下，必须有一个等效的非空唯一键。这是因为组复制在内部使用主键来识别和处理行更改 (E 正确)。\nG) 二进制日志格式必须设置为`ROW` (`binlog_format=ROW`)。组复制依赖于基于行的复制格式来确保数据在所有成员之间的一致性和确定性应用 (G 正确)。\n\n错误选项分析：\nA) 复制过滤器：通常不建议在组复制成员之间使用复制过滤器，因为这可能导致数据不一致。所有成员应该有相同的数据集。\nB) 半同步复制插件：组复制是MySQL原生的高可用和数据一致性解决方案，它有自己的同步和共识机制，不依赖于传统的半同步复制插件。\nD) 二进制日志校验和 (`binlog_checksum`)：虽然启用校验和是一个好的实践，可以帮助检测数据损坏，但它不是组复制的强制要求。组复制有其自身的机制来确保数据传输的完整性。\nF) 二进制日志`MIXED`格式：组复制强制要求使用`ROW`格式，不支持`STATEMENT`或`MIXED`格式。\n\n**考点总结:**\n此题考察MySQL组复制的关键配置要求。这些要求是为了保证组复制的正确运行、数据一致性和故障恢复能力。",
+        "suggestion": "### 应试技巧与学习建议\n\n**应试技巧:**\n记住组复制的几个核心要求：ROW格式的binlog，所有表有主键（或等效），以及启用`log_slave_updates`。这些是确保数据一致性和分布式协调的基础。\n\n**学习建议:**\n详细阅读MySQL官方文档中关于组复制的章节，特别是其“要求和限制”部分。了解每个要求背后的原因。进行组复制的实验部署，熟悉配置过程和常见问题排查。"
+    },
+    {
+        "question": "### 试题 43:\n\nYou are attempting to start your mysqld. Examine this log output:\n```\n2019-12-12T22:21:40.353800Z 0 [System] [MY-010116] [Server] /mysql/bin/mysqld (mysqld 8.0.18-commercial) starting as process 29740\n2019-12-12T22:21:40.458802Z 1 [ERROR] [MY-012592] [InnoDB] Operating system error number 2 in a file operation.\n2019-12-12T22:21:40.459259Z 1 [ERROR] [MY-012593] [InnoDB] The error means the system cannot find the path specified.\n2019-12-12T22:21:40.459423Z 1 [ERROR] [MY-012594] [InnoDB] If you are installing InnoDB, remember that you must create directories yourself, InnoDB does not create them.\n2019-12-12T22:21:40.459606Z 1 [ERROR] [MY-012646] [InnoDB] File ./ibdata1: 'open' returned os error 71. Cannot continue operation.\n2019-12-12T22:21:40.459891Z 1 [ERROR] [MY-012981] [InnoDB] Cannot continue operation.\n```\nWhich two things must you check?",
+        "selections": {
+            "A": "the configuration file for correct datadir setting",
+            "B": "that you are using the correct version of MySQL",
+            "C": "that the TLS/SSL certificates are still valid",
+            "D": "for the possibility that the files are locked by another process",
+            "E": "for the presence of the missing files in other locations",
+            "F": "that the user attempting to connect to the database is using the correct username and password"
+        },
+        "answers": [
+            "A",
+            "E"
+        ],
+        "summary": "### 选项分析与考点总结\n\n**选项分析:**\n错误日志的关键信息：\n- `Operating system error number 2`: 这通常对应 'No such file or directory' (ENOENT)。\n- `The error means the system cannot find the path specified.`\n- `File ./ibdata1: 'open' returned os error 71. Cannot continue operation.` (OS error 71也可能与路径或文件访问问题相关，具体含义可能因OS而异，但结合前文的error 2，路径问题是主要嫌疑)。\n- `If you are installing InnoDB, remember that you must create directories yourself...`\n\n这些错误强烈指向MySQL服务器在启动时无法找到其数据目录或数据目录中的关键文件（如`ibdata1`）。\n\nA) 检查配置文件（如`my.cnf`）中`datadir`的设置是否正确。如果`datadir`指向了一个不存在的路径，或者MySQL进程没有权限访问该路径，就会出现这类错误 (A 正确)。\nE) 检查缺失的文件（如`ibdata1`）是否存在于其他位置，或者数据目录是否确实为空或不完整。如果`datadir`设置正确，但关键文件丢失或不在预期路径下（例如，`./ibdata1`相对于`datadir`），也会导致启动失败 (E 正确)。\n\n错误选项分析：\nB) 错误日志明确显示MySQL版本为8.0.18。版本问题本身不直接导致“找不到路径”的错误，除非配置文件或数据文件与该版本不兼容（但这通常会有更具体的错误信息）。\nC) TLS/SSL证书问题通常会在尝试建立加密连接时出现，或在服务器启动时加载证书阶段报错，与找不到`ibdata1`或路径的错误类型不同。\nD) 文件被其他进程锁定通常会导致“Permission denied”或“File in use”之类的错误，而不是“No such file or directory”。\nF) 这是客户端连接数据库时的问题，与服务器启动失败无关。\n\n**考点总结:**\n此题考察根据MySQL错误日志诊断启动失败原因的能力。核心在于识别操作系统错误码的含义，并将其与MySQL的配置（特别是`datadir`）和文件系统状态联系起来。",
+        "suggestion": "### 应试技巧与学习建议\n\n**应试技巧:**\n仔细阅读错误日志中的每一条信息，特别是`[ERROR]`级别的。关注操作系统错误码（如error 2）和MySQL自身的错误描述。将错误信息与可能的配置问题或文件系统问题关联起来。\n\n**学习建议:**\n熟悉MySQL服务器启动过程和常见的启动失败原因。学习如何解读MySQL错误日志。了解`datadir`参数的重要性及其在配置文件中的设置。掌握基本的Linux文件系统命令（如`ls`, `pwd`, `df`, `mount`）以帮助排查路径和权限问题。"
+    },
+    {
+        "question": "### 试题 44:\n\nWhich three requirements must be enabled for group replication?",
+        "selections": {
+            "A": "primary key or primary key equivalent on every table",
+            "B": "semi-sync replication plugin",
+            "C": "binary log ROW format",
+            "D": "binary log MIXED format",
+            "E": "replication filters",
+            "F": "binary log checksum",
+            "G": "slave updates logging"
+        },
+        "answers": [
+            "A",
+            "C",
+            "G"
+        ],
+        "summary": "### 选项分析与考点总结\n\n**选项分析:**\n此题与试题42内容几乎完全相同，只是选项顺序可能不同。\nA) 所有表必须有主键或等效的非空唯一键 (A 正确)。\nC) 二进制日志格式必须为`ROW` (C 正确)。\nG) `log_slave_updates` (或 `log_replica_updates`) 必须启用 (G 正确)。\n\n错误选项分析同试题42。\n\n**考点总结:**\n再次强调MySQL组复制的核心配置要求，这些是保证其功能和数据一致性的基础。",
+        "suggestion": "### 应试技巧与学习建议\n\n**应试技巧:**\n重复的考点更应牢记。组复制的这三个核心要求（ROW格式binlog, 表主键, `log_slave_updates`）非常重要。\n\n**学习建议:**\n参考试题42的学习建议。对核心概念和要求的反复巩固有助于加深记忆。"
+    },
+    {
+        "question": "### 试题 45:\n\nChoose two. Which two statements are true about raw binary backups?",
+        "selections": {
+            "A": "They are converted to a highly compressible binary format.",
+            "B": "They are required to obtain FIPS security compliance.",
+            "C": "The resulting files are easily human readable.",
+            "D": "The data format is identical to how MySQL stores the data on disk.",
+            "E": "They are faster than logical backups because the process is a simple file or file system copy."
+        },
+        "answers": [
+            "D",
+            "E"
+        ],
+        "summary": "### 选项分析与考点总结\n\n**选项分析:**\n“原始二进制备份”（Raw binary backups）通常指物理备份，即直接复制MySQL数据文件。\nD) 数据格式与MySQL在磁盘上存储数据的格式相同。物理备份直接拷贝数据文件（如`.ibd`, `.MYD`, `.MYI`文件）和日志文件，这些文件的内部格式就是MySQL原生的存储格式 (D 正确)。\nE) 物理备份通常比逻辑备份（如`mysqldump`）快，特别是在数据量很大时。因为物理备份是文件系统级别的复制，避免了SQL解析、数据转换和重新生成SQL语句的开销 (E 正确)。\n\n错误选项分析：\nA) 物理备份是直接复制原始文件，不会自动“转换”为其他高度可压缩的二进制格式。压缩可以在复制之后作为单独步骤进行，或者某些备份工具可能内置压缩功能，但“转换格式”不是物理备份的固有属性。\nB) FIPS安全合规性是一个广泛的标准，涉及加密、密钥管理等多个方面。备份方法本身（物理或逻辑）不直接决定是否满足FIPS合规，而是备份过程中的安全措施（如加密备份数据、安全存储密钥等）以及所用工具是否经过FIPS认证等因素共同决定。\nC) 物理备份的结果是二进制数据文件，它们不是人类可读的。逻辑备份（如`mysqldump`产生的SQL文件）才是人类可读的。\n\n**考点总结:**\n此题考察对物理备份（原始二进制备份）基本特性的理解。关键在于其直接复制磁盘数据格式，并且通常比逻辑备份速度快。",
+        "suggestion": "### 应试技巧与学习建议\n\n**应试技巧:**\n区分物理备份和逻辑备份的核心差异。物理备份操作的是文件系统层面的数据文件，逻辑备份操作的是SQL层面的数据表示。\n\n**学习建议:**\n学习MySQL的各种备份恢复方法，包括逻辑备份（`mysqldump`, `mysqlpump`, `SELECT ... INTO OUTFILE`）、物理备份（冷备份直接拷贝文件、热备份工具如MySQL Enterprise Backup/Percona XtraBackup、文件系统快照）。理解它们各自的优缺点、适用场景、备份速度、恢复速度、一致性保证以及对服务器负载的影响。"
+    },
+    {
+        "question": "### 试题 46:\n\nChoose two. Which two methods can be used to determine whether a query uses the hash join algorithm?\n",
+        "selections": {
+            "A": "EXPLAIN FORMAT=JSON",
+            "B": "EXPLAIN FORMAT=TRADITIONAL",
+            "C": "EXPLAIN FORMAT=TREE",
+            "D": "EXPLAIN without any formatting argument",
+            "E": "EXPLAIN ANALYZE"
+        },
+        "answers": [
+            "A",
+            "E"
+        ],
+        "summary": "### 选项分析与考点总结\n\n**选项分析:**\nMySQL从8.0.18版本开始引入哈希连接（Hash Join）。要查看查询是否使用了哈希连接，需要检查`EXPLAIN`的输出。\nA) `EXPLAIN FORMAT=JSON`：JSON格式的`EXPLAIN`输出提供了非常详细的执行计划信息。如果使用了哈希连接，会在JSON结构中明确标识出哈希连接操作及其相关的细节（如构建端、探测端、哈希条件等） (A 正确)。\nE) `EXPLAIN ANALYZE`：这个命令（从MySQL 8.0.18开始支持，并且在8.0.20中改进）不仅显示估计的执行计划，还会实际执行查询并显示实际的执行统计信息，包括时间、行数等。在其输出中，如果使用了哈希连接，会清晰地显示哈希连接操作以及相关的性能数据 (E 正确)。\n\n错误或不那么直接的选项分析：\nB) `EXPLAIN FORMAT=TRADITIONAL` (或默认的表格格式，即D选项)：传统的表格格式`EXPLAIN`输出可能不那么直接地显示哈希连接。虽然在`Extra`列或其他地方可能通过特定文本（如 `Using join buffer (Hash Join)` 或类似）间接提示，但JSON和ANALYZE格式更为明确和详细。\nC) `EXPLAIN FORMAT=TREE`：树形格式的`EXPLAIN`输出（从MySQL 8.0.16开始提供）比传统表格格式更易读，并且能够显示操作的层级关系。它应该也能显示哈希连接，但JSON和ANALYZE通常提供更全面的信息，特别是ANALYZE还包含实际执行数据。\nD) `EXPLAIN`（不带`FORMAT`参数）：默认使用表格格式，如B所述。\n\n**考点总结:**\n此题考察如何通过`EXPLAIN`命令来识别MySQL查询是否使用了哈希连接算法。`FORMAT=JSON`和`EXPLAIN ANALYZE`是查看详细执行计划并确认哈希连接使用的最有效方法。",
+        "suggestion": "### 应试技巧与学习建议\n\n**应试技巧:**\n当需要获取最详细或特定格式的执行计划信息时，优先考虑`EXPLAIN`的`FORMAT`子句和`ANALYZE`选项。哈希连接是较新的特性，其信息在更现代的`EXPLAIN`输出格式中更为突出。\n\n**学习建议:**\n学习MySQL 8.0中引入的哈希连接算法，了解其工作原理、适用场景（特别是等值连接且无合适索引时）以及如何通过`EXPLAIN`（特别是`FORMAT=JSON`和`EXPLAIN ANALYZE`）来观察和分析。掌握不同`EXPLAIN`输出格式的优缺点。"
+    },
+    {
+        "question": "### 试题 47:\n\nChoose two. You have an InnoDB Cluster configured with three servers. Examine this command, which executes successfully: `mysqldump -uroot -p -d mydatabase > mydatabase_backup.sql`\nDue to data loss, the cluster is initialized and a restore is attempted resulting in this error:\n`ERROR 13176 (HY000) at line 23: Cannot update GTID_PURGED with the Group Replication plugin running`\nWhich two actions, either one of which, can fix this error and allow a successful restore of the cluster?",
+        "selections": {
+            "A": "Remove the group replication plugin from each instance before restoring.",
+            "B": "Remove the `@@GLOBAL.gtid_executed` statement from the dump file.",
+            "C": "Stop all instances except the primary read/write master instance and run the restore.",
+            "D": "Restore using the `--set-gtid-purged=OFF` option.",
+            "E": "Remove the `@@GLOBAL.gtid_purged` statement from the dump file.",
+            "F": "Create the backup by using the `--set-gtid-purged=OFF` option."
+        },
+        "answers": [
+            "E",
+            "F"
+        ],
+        "summary": "### 选项分析与考点总结\n\n**选项分析:**\n错误信息 `Cannot update GTID_PURGED with the Group Replication plugin running` 表明在尝试恢复备份（其中可能包含`SET @@GLOBAL.GTID_PURGED`语句）时，由于组复制插件正在运行，不允许直接修改`GTID_PURGED`。组复制有其自身的GTID管理机制。\n该备份命令 `mysqldump -uroot -p -d mydatabase ...` 中 `-d` 选项表示 `--no-data`，即只导出数据库结构，不导出数据。然而，即使是结构导出，如果GTID已启用，`mysqldump`默认会包含`SET @@SESSION.SQL_LOG_BIN=0;`和`SET @@GLOBAL.GTID_PURGED=...;`（或类似语句）。\n\n要解决这个问题，可以在备份或恢复时处理`GTID_PURGED`的设置：\nE) 从dump文件中移除`SET @@GLOBAL.gtid_purged=...;`（或类似的）语句。这样在恢复时就不会尝试修改这个全局变量，避免与组复制插件冲突 (E 正确)。\nF) 在创建备份时使用`--set-gtid-purged=OFF`选项。这个`mysqldump`选项会阻止在dump文件中输出`SET @@GLOBAL.GTID_PURGED`语句。这样产生的备份文件在恢复时就不会有这个冲突 (F 正确)。\n\n错误选项分析：\nA) 移除组复制插件是一个比较激进的措施，通常不是解决此类问题的首选。而且恢复后还需要重新配置组复制。\nB) dump文件中通常是`GTID_PURGED`，而不是`GTID_EXECUTED`。`GTID_EXECUTED`是服务器当前已执行的GTID集合，通常不应手动从备份中移除或修改。\nC) 即使只在主节点上恢复，只要组复制插件在运行，直接修改`GTID_PURGED`的问题仍然存在。\nD) `mysqldump`（用于备份）有`--set-gtid-purged`选项。`mysql`客户端（用于恢复）没有这个选项来控制导入行为。恢复时是通过执行dump文件中的SQL语句。\n\n**考点总结:**\n此题考察在启用了组复制和GTID的环境下，使用`mysqldump`进行备份和恢复时可能遇到的`GTID_PURGED`冲突问题，以及如何通过`mysqldump`选项或修改dump文件来解决。",
+        "suggestion": "### 应试技巧与学习建议\n\n**应试技巧:**\n当看到GTID相关的错误，并且涉及到组复制时，要考虑它们之间的交互和限制。`GTID_PURGED`的设置是关键点。\n\n**学习建议:**\n学习在启用GTID的环境下如何正确使用`mysqldump`进行备份和恢复。掌握`--set-gtid-purged`选项（`AUTO`, `ON`, `OFF`）的含义和使用场景。了解组复制环境对GTID管理的特殊要求。熟悉在恢复数据到InnoDB集群（特别是初始化或重建后）时的最佳实践。"
+    },
+    {
+        "question": "### 试题 48:\n\nChoose three. Which three are types of InnoDB tablespaces?",
+        "selections": {
+            "A": "data tablespaces",
+            "B": "schema tablespaces",
+            "C": "redo tablespaces",
+            "D": "temporary table tablespaces",
+            "E": "undo tablespaces",
+            "F": "encryption tablespaces"
+        },
+        "answers": [
+            "A",
+            "D",
+            "E"
+        ],
+        "summary": "### 选项分析与考点总结\n\n**选项分析:**\nInnoDB存储引擎管理多种类型的表空间来存储不同种类的数据和元数据。\nA) 数据表空间 (Data tablespaces)：这是最常见的类型，用于存储用户表和索引的数据。包括系统表空间（`ibdata1`）、独立表空间（file-per-table, `.ibd`文件）和通用表空间 (A 正确)。\nD) 临时表表空间 (Temporary table tablespaces)：用于存储用户创建的临时表和优化器在处理复杂查询时内部使用的磁盘临时表。可以是共享的临时表空间或（从MySQL 8.0.16开始）每个会话的临时表空间 (D 正确)。\nE) Undo表空间 (Undo tablespaces)：用于存储undo日志，这些日志是事务回滚和MVCC所必需的。从MySQL 5.7开始，undo日志可以配置为存储在独立的undo表空间中，而不是系统表空间 (E 正确)。\n\n错误选项分析：\nB) “Schema tablespaces”：模式（数据库）本身不是一个表空间类型。表空间是存储表和索引等对象的容器。一个模式下的表可以存储在不同类型的表空间中。\nC) “Redo tablespaces”：InnoDB有redo日志文件（`ib_logfile*`），它们对事务持久性和崩溃恢复至关重要。但通常不把它们称为“redo表空间”。它们是特定格式的日志文件，有自己的管理方式。\nF) “Encryption tablespaces”：加密是应用于数据表空间（如独立表空间或通用表空间）的一个属性或特性，而不是一种独立的表空间类型。加密的表空间仍然是数据表空间。\n\n**考点总结:**\n此题考察对InnoDB不同表空间类型的识别。核心包括存储实际数据的表空间、存储临时数据的表空间和存储undo日志的表空间。",
+        "suggestion": "### 应试技巧与学习建议\n\n**应试技巧:**\n回忆InnoDB存储架构的组成部分。思考不同类型的数据（用户数据、临时数据、事务恢复数据）是如何存储的。\n\n**学习建议:**\n详细学习InnoDB的存储结构，包括：\n1.  系统表空间（System Tablespace）：存储数据字典、双写缓冲、修改缓冲、undo日志（旧版本）以及用户表和索引（如果`innodb_file_per_table=OFF`）。\n2.  独立表空间（File-per-table Tablespaces）：每个表的数据和索引存储在各自的`.ibd`文件中。\n3.  通用表空间（General Tablespaces）：可以存储多个表的共享表空间。\n4.  Undo表空间（Undo Tablespaces）：专门用于存储undo日志。\n5.  临时表空间（Temporary Tablespaces）：用于存储临时表和内部临时磁盘表。\n了解每种表空间的用途、配置和管理。"
+    },
+    {
+        "question": "### 试题 49:\n\nChoose two. Examine this statement and output:\n```sql\nmysql> SELECT ROW_NUMBER() OVER() AS QN, query, exec_count, avg_latency, lock_latency FROM sys.statement_analysis ORDER BY exec_count DESC;\n\n```\n| QN | query                                                              | exec_count | avg_latency | lock_latency |\n|----|--------------------------------------------------------------------|------------|-------------|--------------|\n| 1  | SELECT SUM (`k`) FROM `mysch` ... INTERVAL ? SOL_TSI_HOUR          | 381268     | 31.44 ms    | 30.06 s      |\n| 2  | SELECT `id`, `val`, ... `updated` WHERE `created` < ?              | 150317     | 358.34 us   | 1.01 ms      |\n| 3  | SELECT `emp_no`, 'val', `created` + INTERVAL ? SOL_TSI_DAY         | 600        | 523.32 ms   | 120.24 ms    |\n| 4  | SELECT `a`, `b`, 'c' FROM 'm' ... ? AND ? OR 'k' BETWEEN ? AND ? | 200        | 10.32 s     | 40.19 ms     |\n| 5  | SELECT `a`, `b` FROM `myschem` ... G(`emp_no`) WHERE `val` = ?     | 1          | 21.03 s     | 274.00 us    |\n\nYou must try to reduce query execution time. Which two queries should you focus on?",
+        "selections": {
+            "A": "QN=2",
+            "B": "QN=3",
+            "C": "QN=4",
+            "D": "QN=1",
+            "E": "QN=5"
+        },
+        "answers": [
+            "C",
+            "E"
+        ],
+        "summary": "### 选项分析与考点总结\n\n**选项分析:**\n目标是减少查询执行时间。我们应该关注那些总执行时间（`exec_count * avg_latency`）较高，或者单次执行时间（`avg_latency`）非常高的查询。\n- QN=1: 执行次数非常高 (381268)，但平均延迟相对较低 (31.44 ms)。总时间 ≈ 381268 * 0.03144 s ≈ 11990 s。\n- QN=2: 执行次数较高 (150317)，平均延迟非常低 (358.34 us)。总时间 ≈ 150317 * 0.00035834 s ≈ 54 s。\n- QN=3: 执行次数中等 (600)，平均延迟中等 (523.32 ms)。总时间 ≈ 600 * 0.52332 s ≈ 314 s。\n- QN=4: 执行次数较低 (200)，但平均延迟非常高 (10.32 s)。总时间 ≈ 200 * 10.32 s ≈ 2064 s。\n- QN=5: 执行次数最低 (1)，但平均延迟最高 (21.03 s)。总时间 ≈ 1 * 21.03 s ≈ 21 s。\n\n要“减少查询执行时间”，我们应该优先关注那些单次执行就很慢的查询，因为优化它们可以带来立竿见影的单次性能提升，也可能对总时间有显著影响。\nC) QN=4: 平均延迟高达10.32秒，即使执行次数不多，优化它对单次用户体验和潜在的累积影响都很大 (C 正确)。\nE) QN=5: 平均延迟是所有查询中最高的，达到21.03秒。虽然只执行了一次，但这么高的延迟表明查询本身存在严重性能问题，优化潜力巨大 (E 正确)。\n\nQN=1虽然总时间最长，但因为其执行次数极高，优化它可能需要更细致的分析，而且单次优化的效果可能不那么“显著”（例如，从31ms降到25ms）。而QN=4和QN=5的单次延迟非常突出，是明显的优化目标。\n\n**考点总结:**\n此题考察如何根据`sys.statement_analysis`（或类似性能视图）的输出来识别需要优化的查询。通常关注两个指标：单次平均延迟 (`avg_latency`) 和总执行时间 (`exec_count * avg_latency`)。高`avg_latency`的查询通常是首要优化目标。\n\n**OCR中的解析“看 avg_latency, 执行次数多的sql语句已经没有优化的空间了”是不准确的。** 执行次数多的SQL如果`avg_latency`仍然较高，或者其总执行时间占比巨大，仍然是重要的优化对象。只是说，如果它的`avg_latency`已经非常低了，再优化的空间可能有限。",
+        "suggestion": "### 应试技巧与学习建议\n\n**应试技巧:**\n分析性能数据时，要综合考虑执行频率和单次耗时。对于用户体验而言，单次响应时间长的查询通常更需要关注。对于系统总负载而言，总耗时长的查询更重要。题目说“减少查询执行时间”，可以理解为减少单次执行时间，也可以是减少总体消耗。优先选择那些`avg_latency`异常高的查询。\n\n**学习建议:**\n学习使用MySQL的`sys` schema中的性能分析视图，如`statement_analysis`, `statements_with_full_table_scans`, `statements_with_sorting`等。了解这些视图中各个列的含义（如`exec_count`, `avg_latency`, `lock_latency`, `rows_sent`, `rows_examined`等）。掌握如何根据这些数据来定位慢查询和高负载查询，并结合`EXPLAIN`进行进一步分析和优化。"
+    },
+    {
+        "question": "### 试题 50:\n\nYou are asked to review possible options for a new MySQL instance. It will be a large, busy reporting data warehousing instance. The `innodb_data_file_path` setting needs to be configured. Which two configurations would satisfy long-term storage demands?",
+        "selections": {
+            "A": "ibdata1:12M:autoextend",
+            "B": "ibdata1:12M;ibdata2:12M:autoextend",
+            "C": "ibdata1:12M;ibdata2:12M;ibdata3:12M",
+            "D": "ibdata1:12M;/tmp/ibdata2:12M:autoextend",
+            "E": "ibdata1:12M",
+            "F": "ibdata1:12M:autoextend;ibdata2:12M:autoextend"
+        },
+        "answers": [
+            "A",
+            "B"
+        ],
+        "summary": "### 选项分析与考点总结\n\n**选项分析:**\n`innodb_data_file_path` 用于配置InnoDB系统表空间的数据文件。对于长期存储需求，特别是数据仓库这种可能持续增长的场景，配置数据文件能够自动扩展是重要的。\n- `autoextend` 属性允许最后一个指定的数据文件在空间不足时自动增长。\n\nA) `ibdata1:12M:autoextend`：定义一个名为`ibdata1`的数据文件，初始大小12MB，并且可以自动扩展。这是满足长期存储需求的有效配置 (A 正确)。\nB) `ibdata1:12M;ibdata2:12M:autoextend`：定义两个数据文件，`ibdata1`初始大小12MB（不可自动扩展），`ibdata2`初始大小12MB，并且可以自动扩展。由于最后一个文件`ibdata2`可以自动扩展，这也满足了长期存储需求 (B 正确)。\n\n错误选项分析：\nC) `ibdata1:12M;ibdata2:12M;ibdata3:12M`：定义了三个固定大小的数据文件，没有一个可以自动扩展。这不适合长期存储和数据增长的需求。\nD) `ibdata1:12M;/tmp/ibdata2:12M:autoextend`：将第二个数据文件放在`/tmp`目录下是不明智的，因为`/tmp`目录中的数据通常在系统重启后会丢失。而且，只有最后一个数据文件才能指定`autoextend`。\nE) `ibdata1:12M`：定义了一个固定大小12MB的数据文件，不可自动扩展，不满足长期存储需求。\nF) `ibdata1:12M:autoextend;ibdata2:12M:autoextend`：`autoextend`属性只能应用于`innodb_data_file_path`中定义的最后一个数据文件。此配置语法错误。\n\n**考点总结:**\n此题考察对InnoDB系统表空间配置参数`innodb_data_file_path`的理解，特别是`autoextend`属性的使用规则。为了满足长期存储需求，至少最后一个数据文件应该配置为可自动扩展。",
+        "suggestion": "### 应试技巧与学习建议\n\n**应试技巧:**\n记住`autoextend`只能用于`innodb_data_file_path`中指定的最后一个数据文件。对于需要增长的系统，自动扩展是必要的。避免将关键数据文件放在临时目录。\n\n**学习建议:**\n学习InnoDB系统表空间的配置和管理。理解`innodb_data_file_path`参数的语法和各个部分的含义（文件名、初始大小、`autoextend`、最大大小等）。了解何时需要配置多个数据文件以及如何规划系统表空间的大小。同时，也要了解`innodb_file_per_table`和通用表空间等其他表空间管理方式，它们在现代MySQL中更常用，可以避免系统表空间过度膨胀。"
+    },
+    {
+        "question": "### 试题 51:\n\nChoose two. An existing asynchronous replication setup is running MySQL 8.\n\n Which two steps are a part of implementing GTID replication?",
+        "selections": {
+            "A": "Enable GTID by executing this on the master and the slave: SET GLOBAL GTID_ENABLED=on;",
+            "B": "On the slave, alter the MySQL master connection setting with: ALTER channel CHANGE MASTER TO MASTER_AUTO_POSITION = 1;",
+            "C": "Execute this on the slave to enable GTID: RESET SLAVE; START SLAVE GTID_NEXT=AUTOMATIC;",
+            "D": "Execute this on the slave to enable GTID: START SLAVE IO_THREAD WITH GTID;",
+            "E": "Restart MySQL (master and slave) with these options enabled: --gtid_mode=ON --log-bin --log-slave-updates --enforce-gtid-consistency",
+            "F": "On the slave, alter the MySQL master connection setting with: CHANGE MASTER TO MASTER_AUTO_POSITION = 1;"
+        },
+        "answers": [
+            "E",
+            "F"
+        ],
+        "summary": "### 选项分析与考点总结\n\n**选项分析:**\n从传统的基于二进制日志文件和位置的复制迁移到基于GTID的复制，通常涉及以下步骤（简化流程）：\n1.  在所有服务器（主库和从库）上启用GTID模式并强制GTID一致性。这通常需要在`my.cnf`中配置相关参数并重启服务器。\n2.  在从库上，将其配置为使用`MASTER_AUTO_POSITION = 1`，这样从库就会自动根据GTID来确定从主库的哪个事务开始复制。\n\nE) 在主库和从库的配置文件中启用`gtid_mode=ON`和`enforce_gtid_consistency=ON`，并确保`log_bin`和`log_slave_updates`（或`log_replica_updates`）也已启用，然后重启MySQL服务。这是启用GTID模式的基础步骤 (E 正确)。\nF) 在从库上，执行`CHANGE MASTER TO MASTER_AUTO_POSITION = 1;`（对于单源复制）或 `CHANGE REPLICATION SOURCE TO SOURCE_AUTO_POSITION = 1;`（对于多源复制，MySQL 8.0.23+）。这告诉从库使用GTID自动定位复制点 (F 正确)。\n\n错误选项分析：\nA) `GTID_ENABLED`不是一个有效的全局变量。启用GTID是通过`gtid_mode`和`enforce_gtid_consistency`参数在配置文件中设置并重启服务器。\nB) `ALTER channel CHANGE MASTER TO ...` 语法不正确。应该是 `CHANGE MASTER TO ...` (针对默认复制通道) 或 `CHANGE REPLICATION SOURCE TO ... FOR CHANNEL 'channel_name'` (针对特定复制通道)。\nC) `GTID_NEXT=AUTOMATIC` 是在会话级别控制GTID行为的，不直接用于启用全局GTID复制。`RESET SLAVE`会清除复制信息，但启用GTID的核心在于服务器配置和`MASTER_AUTO_POSITION`。\nD) `START SLAVE IO_THREAD WITH GTID;` 这种语法不存在。启动从库线程使用 `START SLAVE;` 或 `START REPLICA;`。\n\n**考点总结:**\n此题考察从传统复制迁移到GTID复制的关键步骤。核心在于服务器端启用GTID模式和一致性，以及在从库端配置为使用自动GTID定位。",
+        "suggestion": "### 应试技巧与学习建议\n\n**应试技巧:**\n区分服务器级别的GTID配置（通过`my.cnf`和重启）和从库连接配置（通过`CHANGE MASTER TO`）。记住`MASTER_AUTO_POSITION = 1`是GTID复制的关键设置。\n\n**学习建议:**\n详细学习MySQL GTID（全局事务标识符）的概念、优点以及如何部署和管理GTID复制。掌握从基于文件和位置的复制在线或离线迁移到GTID复制的完整步骤。了解`gtid_mode`, `enforce_gtid_consistency`, `MASTER_AUTO_POSITION`等关键参数的作用。熟悉相关的监控和故障排除。"
+    },
+    {
+        "question": "### 试题 52:\n\nChoose two. You plan to install MySQL Server by using the RPM download. Which two statements are true?",
+        "selections": {
+            "A": "You must manually initialize the data directory.",
+            "B": "You can provide the root password interactively.",
+            "C": "The MySQL RPM package installation supports deploying multiple MySQL versions on the same host.",
+            "D": "MySQL uses the RPM relocatable installation target feature.",
+            "E": "You can find the root password in the error log after the first start.",
+            "F": "The functionality is split among several RPM package files."
+        },
+        "answers": [
+            "E",
+            "F"
+        ],
+        "summary": "### 选项分析与考点总结\n\n**选项分析:**\n通过RPM包安装MySQL时的一些特性：\nE) 在首次启动通过RPM安装的MySQL服务器后（特别是较新版本如MySQL 5.7+和8.0），一个临时的root用户密码通常会自动生成并记录在MySQL的错误日志文件中。用户需要从错误日志中找到这个临时密码，然后用它登录并设置新的root密码 (E 正确)。\nF) MySQL的RPM安装通常由多个包组成，例如核心服务器包 (`mysql-community-server`)、客户端工具包 (`mysql-community-client`)、共享库 (`mysql-community-libs`)、开发文件 (`mysql-community-devel`)等。这种模块化的包结构允许用户根据需要安装不同的组件 (F 正确)。\n\n错误选项分析：\nA) 通过RPM包安装MySQL时，安装过程通常会自动处理数据目录的初始化（例如，执行`mysqld --initialize`或类似操作）。用户一般不需要手动初始化。\nB) RPM安装过程通常不会提供交互式设置root密码的环节。密码是自动生成（如E所述）或在某些自动化部署场景下通过预配置方式设置。\nC) 标准的MySQL RPM包（如来自Oracle官方的`mysql-community-*`系列）通常不支持在同一主机上轻松部署多个MySQL版本。要实现多版本共存，可能需要使用特殊的RPM包（如SCL - Software Collections）或手动进行复杂配置。\nD) MySQL的官方RPM包通常安装到固定的标准路径（如`/usr/sbin/mysqld`, `/var/lib/mysql`等），不广泛使用RPM的“可重定位安装”特性允许用户随意指定安装目标。\n\n**考点总结:**\n此题考察通过RPM包安装MySQL的一些常见行为和特性，特别是初始密码的获取和包的模块化结构。",
+        "suggestion": "### 应试技巧与学习建议\n\n**应试技巧:**\n了解通过不同方式（RPM, DEB, tarball, 源码）安装MySQL的异同点。特别是RPM安装的自动化程度和初始设置流程。\n\n**学习建议:**\n实际操作一次通过官方RPM包安装MySQL的过程。注意安装后如何找到初始root密码，以及如何进行首次安全配置（如运行`mysql_secure_installation`脚本）。熟悉MySQL RPM包的命名约定和不同组件包的作用。"
+    },
+    {
+        "question": "### 试题 53:\n\nChoose four. Which four connection methods can MySQL clients specify with the `--protocol` option when connecting to a MySQL server?",
+        "selections": {
+            "A": "IPv4",
+            "B": "SOCKET",
+            "C": "MEMORY",
+            "D": "PIPE",
+            "E": "IPv6",
+            "F": "FILE",
+            "G": "TCP",
+            "H": "DIRECT"
+        },
+        "answers": [
+            "B",
+            "C",
+            "D",
+            "G"
+        ],
+        "summary": "### 选项分析与考点总结\n\n**选项分析:**\nMySQL客户端的`--protocol`选项用于指定连接到服务器时使用的连接协议。\nB) `SOCKET`：在类Unix系统上，用于通过Unix域套接字文件进行本地连接 (B 正确)。\nC) `MEMORY`：用于通过共享内存进行本地连接（主要在Windows上，并且服务器也需要启用共享内存连接） (C 正确)。\nD) `PIPE`：用于通过命名管道进行本地连接（主要在Windows上） (D 正确)。\nG) `TCP`：用于通过TCP/IP网络进行连接，可以是本地连接（连接到`127.0.0.1`或`localhost`）或远程连接 (G 正确)。\n\n错误选项分析：\nA) `IPv4`：这不是`--protocol`的一个值。TCP/IP连接可以使用IPv4或IPv6地址，但这由主机名解析或直接指定的IP地址决定，而不是由`--protocol=IPv4`指定。\nE) `IPv6`：同A，不是`--protocol`的值。\nF) `FILE`：没有名为`FILE`的连接协议。\nH) `DIRECT`：没有名为`DIRECT`的连接协议。\n\n**考点总结:**\n此题考察MySQL客户端支持的连接协议类型。核心是TCP/IP网络连接、Unix套接字（类Unix系统）、命名管道（Windows）和共享内存（Windows）。",
+        "suggestion": "### 应试技巧与学习建议\n\n**应试技巧:**\n记住MySQL客户端常用的几种连接方式及其对应的`--protocol`值。注意区分协议类型和网络地址类型（IPv4/IPv6）。\n\n**学习建议:**\n学习MySQL的网络连接配置和客户端连接选项。了解不同操作系统平台上支持的本地连接方式（如Unix套接字、命名管道、共享内存）以及它们与TCP/IP网络连接的区别。熟悉`mysql`命令行客户端的常用连接参数，如`--host`, `--port`, `--user`, `--password`, `--protocol`, `--socket`, `--pipe`, `--shared-memory-base-name`等。"
+    },
+    {
+        "question": "### 试题 54:\n\nYou have a MySQL client installed on your Linux workstation with a default installation. You have your admin login credentials to connect to a MySQL server running Microsoft Windows on remote host `192.0.2.1:3306` to connect to the `world` database. Which four options need to be specified to complete this task with a single command?",
+        "selections": {
+            "A": "--port=3306",
+            "B": "--protocol=pipe",
+            "C": "--host=192.0.2.1",
+            "D": "--protocol=UDP",
+            "E": "--user=admin",
+            "F": "--password",
+            "G": "--socket=/tmp/mysql.sock",
+            "H": "--shared-memory-base-name=world",
+            "I": "--database=world"
+        },
+        "answers": [
+            "C",
+            "E",
+            "F",
+            "I"
+        ],
+        "summary": "### 选项分析与考点总结\n\n**选项分析:**\n要通过`mysql`命令行客户端连接到远程MySQL服务器并指定数据库，通常需要以下参数：\n- 主机名或IP地址 (`--host` 或 `-h`)\n- 用户名 (`--user` 或 `-u`)\n- 密码 (可以通过`--password` 或 `-p`提示输入，或直接`--password=your_pass`但不推荐)\n- 要连接的数据库名 (可以直接在命令末尾指定，或使用`--database` 或 `-D`)\n- 端口号 (`--port` 或 `-P`) 如果不是默认的3306。\n\n根据题目描述：\n- 远程主机：`192.0.2.1`\n- 端口：`3306` (这是MySQL默认端口，如果客户端默认也用这个，则此选项不“必需”指定，但指定了更明确)\n- 数据库：`world`\n- 用户：`admin` (假设，题目说有admin登录凭据)\n- 密码：需要提供\n\nC) `--host=192.0.2.1`：指定远程服务器的IP地址 (C 正确)。\nE) `--user=admin`：指定登录用户名 (E 正确)。\nF) `--password` (或 `-p`): 提示用户输入密码。如果密码是命令行参数的一部分（不推荐），也算是一个“选项” (F 正确)。\nI) `--database=world` (或 `-D world` 或在命令最后写 `world`)：指定要连接的数据库 (I 正确)。\n\n错误或非必需选项分析：\nA) `--port=3306`：由于3306是默认端口，如果客户端也默认连接此端口，则此选项不是严格“必需”的，但指定无害。如果题目强调“最少必需选项”，则可能不算。但为了明确，它通常是好的实践。\nB) `--protocol=pipe`：命名管道是Windows本地连接方式，不适用于连接到远程Windows服务器（除非有特殊网络配置如SMB隧道等，但通常不用）。应使用TCP/IP。\nD) `--protocol=UDP`：MySQL不使用UDP进行标准客户端服务器连接。\nG) `--socket=/tmp/mysql.sock`：Unix套接字用于本地连接，不适用于连接到远程Windows服务器。\nH) `--shared-memory-base-name=world`：共享内存是Windows本地连接方式。\n\n**考点总结:**\n此题考察使用`mysql`命令行客户端连接远程服务器时所需的基本参数。核心是主机、用户、密码和数据库。\n\n**答案说明:** 若严格要求“必需”，且客户端默认端口是3306，则A选项可能不是绝对必需。但题目通常期望包含所有显式连接信息。C, E, F, I是最核心的四个。",
+        "suggestion": "### 应试技巧与学习建议\n\n**应试技巧:**\n回忆连接MySQL所需的最基本信息：去哪里（主机/端口），我是谁（用户），怎么证明（密码），干什么（数据库）。区分本地连接和远程连接所需的参数。\n\n**学习建议:**\n熟练掌握`mysql`命令行客户端的常用选项及其简写形式。练习连接本地和远程MySQL服务器，并指定不同的参数。了解默认值（如默认端口3306）。注意密码在命令行上的安全处理（推荐使用`-p`提示输入，而不是直接写密码）。"
+    },
+    {
+        "question": "### 试题 55:\n\nChoose three. Which three are characteristics of a newly created role?",
+        "selections": {
+            "A": "It is stored in the mysql.role table.",
+            "B": "It can be dropped using the DROP ROLE statement.",
+            "C": "It can be protected with a password.",
+            "D": "It can be granted to user accounts.",
+            "E": "It can be renamed using the RENAME ROLE statement.",
+            "F": "It is created as a locked account."
+        },
+        "answers": [
+            "B",
+            "D",
+            "F"
+        ],
+        "summary": "### 选项分析与考点总结\n\n**选项分析:**\nMySQL中的角色 (Role) 是一组权限的命名集合。\nB) 可以使用`DROP ROLE`语句删除一个已创建的角色 (B 正确)。\nD) 角色被创建后，可以像权限一样授予给用户账户（`GRANT role TO user;`）或授予给其他角色 (D 正确)。\nF) 根据MySQL文档，新创建的角色默认是“锁定的”（locked），这意味着即使角色被授予用户，如果该角色没有被设置为用户的默认角色或在会话中显式激活，用户也无法使用该角色包含的权限。但更准确地说，新创建的角色是空的，没有任何权限，并且没有密码。关于“locked account”的说法可能指角色本身不能直接登录，而是作为权限集合赋给用户。然而，在某些上下文中，也可能指角色创建后需要显式管理其激活状态。题目的“答案”提示“A role when created is locked, has no password.”，这暗示F是预期的答案之一，尽管“locked account”这个表述可能不完全精确，但它指向角色创建后的初始状态是受限的或需要进一步配置才能生效。\n\n错误选项分析：\nA) MySQL 8.0中，角色信息和其他元数据一样，存储在数据字典中。没有一个名为`mysql.role`的特定用户可见的表来存储角色。相关的系统表（如`mysql.user`可能间接涉及，或内部数据字典表）用于此目的。\nC) 角色本身不能直接用密码保护。密码是与用户账户关联的。角色是权限的集合。\nE) 可以使用`RENAME ROLE`语句重命名一个已创建的角色。所以这个陈述本身是正确的。但如果需要选三个“特征”，要看哪个更核心或更符合题目意图。如果F被认为是正确的话，B,D,F可能是最佳组合。\n\n**考点总结:**\n此题考察MySQL角色的基本特性和管理操作。核心在于角色是权限的容器，可以被授予、撤销、删除和重命名。\n\n**答案说明:** 结合OCR的答案提示 “A role when created is locked, has no password.”，可以推断出F选项被认为是正确的。那么，B, D, F是可能的三个答案。E选项（可重命名）也是角色的一个正确特征。如果必须三选，并且F成立，那么B,D,F是最符合“新创建角色”的特征，因为重命名是后续操作。",
+        "suggestion": "### 应试技巧与学习建议\n\n**应试技巧:**\n理解角色的本质——权限的集合体。回忆与角色相关的SQL命令（`CREATE ROLE`, `DROP ROLE`, `GRANT role`, `REVOKE role`, `SET ROLE`, `SET DEFAULT ROLE`, `RENAME ROLE`）。\n\n**学习建议:**\n学习MySQL 8.0中引入的角色管理功能。掌握如何创建、管理和使用角色。理解角色与用户账户、权限之间的关系。了解角色激活（`SET ROLE`）和默认角色（`SET DEFAULT ROLE`）的概念。"
+    },
+    {
+        "question": "### 试题 56:\n\nTable `t` is an InnoDB table. Examine these statements and output:\n```sql\nselect count(1) from t;\ncount(1) = 72\n\nmysql> show indexes from t \\G\n*************************** 1. row ***************************\n        Table: t\n   Non_unique: 0\n     Key_name: PRIMARY\n Seq_in_index: 1\n  Column_name: a\n    Collation: A\n  Cardinality: 72\n     Sub_part: NULL\n       Packed: NULL\n         Null:\n   Index_type: BTREE\n      Comment:\nIndex_comment:\n      Visible: YES\n   Expression: NULL\n*************************** 2. row ***************************\n        Table: t\n   Non_unique: 1\n     Key_name: b_idx\n Seq_in_index: 1\n  Column_name: b\n    Collation: A\n  Cardinality: 1\n     Sub_part: NULL\n       Packed: NULL\n         Null: YES\n   Index_type: BTREE\n      Comment:\nIndex_comment:\n      Visible: NO\n   Expression: NULL\n2 row in set (0.00 sec)\n```\nWhich two are true?",
+        "selections": {
+            "A": "ANALYZE TABLE t would update index statistics uniquely for the PRIMARY index.",
+            "B": "Table t has two viable indexes to be used for queries.",
+            "C": "SELECT b from t would perform a table scan.",
+            "D": "Index b_idx has a low number of unique values.",
+            "E": "SELECT a FROM t would perform a table scan."
+        },
+        "answers": [
+            "C",
+            "D"
+        ],
+        "summary": "### 选项分析与考点总结\n\n**选项分析:**\n- 表`t`有一个主键在列`a`上，基数是72（与表行数相同），可见（Visible: YES）。\n- 表`t`有一个名为`b_idx`的索引在列`b`上，基数是1，不可见（Visible: NO）。不可见的索引不会被优化器用于查询。\n\nD) 索引`b_idx`的`Cardinality`（基数）为1，这意味着该索引列中只有1个唯一值。这确实是一个非常低的唯一值数量，表明该列的选择性很差 (D 正确)。\nC) 查询`SELECT b from t`：由于索引`b_idx`是`Visible: NO`（不可见），优化器不会使用它。因此，这个查询很可能会执行全表扫描来获取列`b`的值 (C 正确)。\n\n错误选项分析：\nA) `ANALYZE TABLE t`会更新表中所有索引的统计信息，而不仅仅是主键。它收集的统计信息（如基数）有助于优化器做出更好的查询计划选择。\nB) 表`t`只有一个可见的（即“可用的”）索引，那就是主键。索引`b_idx`是不可见的，因此优化器不会使用它来执行查询。所以说有两个“可用的”索引是错误的。\nE) 查询`SELECT a FROM t`：列`a`是主键。如果查询只是简单地选择主键列（`SELECT a FROM t`），并且没有`WHERE`子句或`ORDER BY`等，优化器可能会选择全表扫描或全索引扫描（如果主键是覆盖索引且比全表扫描更优）。但如果查询是`SELECT * FROM t WHERE a = value`，则会使用主键索引。题目中的简单`SELECT a FROM t`在某些情况下可能进行索引扫描（如果优化器认为比表扫描快），不一定总是表扫描。\n\n**考点总结:**\n此题考察对`SHOW INDEXES`输出的解读，特别是`Cardinality`和`Visible`字段的含义。基数反映索引的选择性，可见性决定优化器是否会使用该索引。不可见的索引对查询优化无效。",
+        "suggestion": "### 应试技巧与学习建议\n\n**应试技巧:**\n仔细阅读`SHOW INDEXES`输出的每一列。`Visible`列是MySQL 8.0引入的，非常重要。`Cardinality`与表总行数对比可以判断索引的选择性。\n\n**学习建议:**\n学习MySQL索引的创建、管理和监控。掌握`SHOW INDEXES`命令的输出格式和各字段含义。理解索引可见性（Visible/Invisible Indexes）的概念和用途（例如，在不影响查询的情况下测试移除索引的影响）。学习索引统计信息（如基数）如何影响查询优化器的决策。"
+    },
+    {
+        "question": "### 试题 57:\n\nChoose two. Which two statements are true about the `mysqld-auto.cnf` file?",
+        "selections": {
+            "A": "It is always updated with changes to system variables.",
+            "B": "This file is for logging purposes only and is never processed.",
+            "C": "It is read and processed at the end of startup configuration.",
+            "D": "This file is for storing MySQL Server configuration options in JSON format.",
+            "E": "It is read and processed at the beginning of startup configuration.",
+            "F": "This file is for storing MySQL server_uuid values only."
+        },
+        "answers": [
+            "C",
+            "D"
+        ],
+        "summary": "### 选项分析与考点总结\n\n**选项分析:**\n`mysqld-auto.cnf`文件是MySQL 5.7引入的（并在8.0中继续使用），用于持久化通过`SET PERSIST`或`SET PERSIST_ONLY`命令设置的系统变量。\nD) 该文件以JSON格式存储配置选项 (D 正确)。\nC) 该文件在MySQL服务器启动时，在处理完所有其他选项文件（如`my.cnf`）和命令行参数之后被读取和处理。这意味着`mysqld-auto.cnf`中设置的变量会覆盖之前在其他地方设置的同名变量 (C 正确)。\n\n错误选项分析：\nA) 只有通过`SET PERSIST`或`SET PERSIST_ONLY`命令修改的系统变量才会被写入`mysqld-auto.cnf`。通过`SET GLOBAL`（不带`PERSIST`）修改的变量只在当前会话或服务器运行时有效，不会写入此文件。\nB) 该文件不是用于日志记录的，而是用于持久化配置。它在服务器启动时会被处理。\nE) 它是在启动配置的末尾被处理，而不是开头。\nF) `server_uuid`通常在`auto.cnf`文件（注意不是`mysqld-auto.cnf`）中生成和存储，该文件也在数据目录下，用于标识服务器实例。`mysqld-auto.cnf`用于存储用户通过`SET PERSIST`设置的变量。\n\n**考点总结:**\n此题考察对`mysqld-auto.cnf`文件作用、格式和处理时机的理解。核心在于它是`SET PERSIST`命令的后台存储，以JSON格式保存，并在启动配置的最后阶段加载。",
+        "suggestion": "### 应试技巧与学习建议\n\n**应试技巧:**\n区分`SET GLOBAL`, `SET SESSION`, `SET PERSIST`, `SET PERSIST_ONLY`命令的作用和影响范围。记住`mysqld-auto.cnf`与`SET PERSIST`紧密相关，并且其加载优先级较高（覆盖其他配置）。\n\n**学习建议:**\n学习MySQL系统变量的设置和持久化机制。掌握`SET PERSIST`命令的使用方法和优点（无需手动编辑`my.cnf`并重启即可持久化配置）。了解MySQL服务器启动时选项文件的加载顺序和优先级。"
+    },
+    {
+        "question": "### 试题 58:\n\nChoose two. Examine this command and output:\n```sql\nmysql> SELECT * FROM performance_schema.data_locks LIMIT 1\\G\n*************************** 1. row ***************************\n             ENGINE: INNODB\n    ENGINE_LOCK_ID: 1200:146\nENGINE_TRANSACTION_ID: 1200\n         THREAD_ID: 45\n          EVENT_ID: 11\n     OBJECT_SCHEMA: mydb\n       OBJECT_NAME: mytable1\n    PARTITION_NAME: NULL\nSUBPARTITION_NAME: NULL\n         INDEX_NAME: NULL\nOBJECT_INSTANCE_BEGIN: 118793337250203\n          LOCK_TYPE: RECORD\n          LOCK_MODE: X\n        LOCK_STATUS: GRANTED\n          LOCK_DATA: 1922,1922\n```\nWhich two statements are true?",
+        "selections": {
+            "A": "The lock is an exclusive lock.",
+            "B": "The lock is a shared lock.",
+            "C": "The lock is a row-level lock.",
+            "D": "The lock is an intentional lock.",
+            "E": "The lock is at the metadata object level.",
+            "F": "The lock is at the table object level."
+        },
+        "answers": [
+            "A",
+            "C"
+        ],
+        "summary": "### 选项分析与考点总结\n\n**选项分析:**\n输出显示了从`performance_schema.data_locks`表中获取的一条锁信息。\n- `LOCK_TYPE: RECORD`：表示这是一个记录锁（record lock），即行级锁 (C 正确)。\n- `LOCK_MODE: X`：表示这是一个排他锁（Exclusive Lock） (A 正确)。\n\n错误选项分析：\nB) 锁模式是`X`（排他锁），不是`S`（共享锁）。\nD) 意向锁（Intentional Lock）的`LOCK_TYPE`通常是`TABLE`，并且`LOCK_MODE`会是`IX`, `IS`, `SIX`等。这里的`LOCK_TYPE`是`RECORD`。\nE) 元数据锁（Metadata Lock, MDL）与数据锁不同，通常在`performance_schema.metadata_locks`表中查看。这里的锁是数据锁。\nF) `LOCK_TYPE: RECORD`明确指出是记录锁（行级），而不是表级锁。表级锁的`LOCK_TYPE`会是`TABLE`。\n\n**考点总结:**\n此题考察对`performance_schema.data_locks`表中锁信息字段的解读能力，特别是`LOCK_TYPE`和`LOCK_MODE`的含义。这是诊断InnoDB锁问题的重要工具。",
+        "suggestion": "### 应试技巧与学习建议\n\n**应试技巧:**\n记住InnoDB常见的锁类型（记录锁、间隙锁、临键锁、表锁、意向锁）及其在`performance_schema`中可能的表示。`LOCK_MODE`的`X`代表排他，`S`代表共享。\n\n**学习建议:**\n学习InnoDB的锁机制，包括不同类型的锁（共享锁/排他锁、记录锁/间隙锁/临键锁、意向锁、表锁）以及它们的作用和兼容性。熟悉如何使用`performance_schema`下的`data_locks`, `data_lock_waits`, `metadata_locks`等表来监控和诊断锁问题。了解`SHOW ENGINE INNODB STATUS`输出中关于锁的信息。"
+    },
+    {
+        "question": "### 试题 59:\n\nChoose two. Your MySQL installation is running low on space due to binary logs. You need to reduce your log space usage urgently. Which two sets of actions when completed will accomplish this?",
+        "selections": {
+            "A": "Use SET PERSIST binlog_expire_logs_seconds=`value`.",
+            "B": "Use SET GLOBAL binlog_expire_logs_seconds=`value` and restart the server.",
+            "C": "Use PURGE BINARY LOGS TO `binlog_name`;",
+            "D": "Set binlog_expire_logs_seconds in my.cnf.",
+            "E": "Use SET GLOBAL binlog_expire_logs_seconds=`value` and run the FLUSH BINARY LOGS command.",
+            "F": "Set binlog_expire_logs_seconds = 0 in my.cnf and restart the server."
+        },
+        "answers": [
+            "C",
+            "E"
+        ],
+        "summary": "### 选项分析与考点总结\n\n**选项分析:**\n要紧急减少二进制日志占用的空间，需要立即删除旧的日志文件，并可能配置自动清理策略。\nC) `PURGE BINARY LOGS TO '<binlog_name>';` 或 `PURGE BINARY LOGS BEFORE 'datetime_expression';`：这个命令会立即删除指定文件名之前（或指定时间之前）的所有二进制日志文件。这是最直接和紧急的清理方法 (C 正确)。\nE) `SET GLOBAL binlog_expire_logs_seconds=<value>;`（或`expire_logs_days`）用于设置二进制日志的自动过期时间。设置后，MySQL会定期检查并删除超过此时间的旧日志。单独设置此变量不会立即删除日志，但如果配合`FLUSH BINARY LOGS;`（或等待下一次自动轮转或检查），新的过期策略会生效，并且如果已有符合条件的旧日志，它们可能会被清理。`FLUSH BINARY LOGS;`本身会轮转日志，也可能触发清理检查（取决于具体实现和版本）。这是一个结合立即操作（轮转）和配置长效策略的方法 (E 正确，虽然“立即”效果主要靠`PURGE`，但此组合能解决“紧急”并设置后续策略)。\n\n错误选项分析：\nA) `SET PERSIST binlog_expire_logs_seconds=<value>;`：这会持久化设置，但不会立即删除日志。效果与`SET GLOBAL`类似，只是会写入`mysqld-auto.cnf`。\nB) `SET GLOBAL binlog_expire_logs_seconds=<value>`后重启服务器：重启会使配置生效，但不会比`PURGE`更快地紧急清理。而且`SET GLOBAL`后通常不需要重启就能使动态变量生效（对于`binlog_expire_logs_seconds`，它会影响未来的自动清理）。\nD) 在`my.cnf`中设置`binlog_expire_logs_seconds`：这需要重启服务器才能生效，不符合“紧急”的需求。\nF) 将`binlog_expire_logs_seconds`设置为0意味着禁用自动过期清理。这与减少空间的目标相反（除非是想完全手动控制清理，但题目是“紧急减少”）。\n\n**考点总结:**\n此题考察如何管理和清理MySQL二进制日志以释放磁盘空间。`PURGE BINARY LOGS`是立即删除旧日志的命令。`binlog_expire_logs_seconds`（或`expire_logs_days`）用于配置自动过期策略。",
+        "suggestion": "### 应试技巧与学习建议\n\n**应试技巧:**\n区分立即生效的命令（如`PURGE BINARY LOGS`）和配置参数（需要特定条件触发或重启生效）。“紧急”意味着需要快速看到效果的操作。\n\n**学习建议:**\n学习MySQL二进制日志的生命周期管理，包括手动清理（`PURGE BINARY LOGS`）、自动过期清理（`binlog_expire_logs_seconds`, `expire_logs_days`）、日志轮转（`FLUSH LOGS`, `max_binlog_size`）。了解这些操作如何影响磁盘空间和复制/恢复能力。制定合理的日志保留策略以平衡空间使用和数据恢复需求。"
+    },
+    {
+        "question": "### 试题 60:\n\nYou must run multiple instances of MySQL Server on a single host. Which three methods are supported?",
+        "selections": {
+            "A": "Use system tools to lock each instance to its own CPU.",
+            "B": "Use resource groups to lock different instances on separate CPUs.",
+            "C": "Run mysqld with --datadir defined for each instance.",
+            "D": "Run MySQL Server docker containers.",
+            "E": "Start mysqld or mysqld_safe using different option files for each instance.",
+            "F": "Use systemd with different settings for each instance."
+        },
+        "answers": [
+            "D",
+            "E",
+            "F"
+        ],
+        "summary": "### 选项分析与考点总结\n\n**选项分析:**\n在单个主机上运行多个MySQL服务器实例有多种方法，关键在于隔离它们的配置、数据目录、端口和套接字文件。\nD) 运行MySQL服务器的Docker容器：每个Docker容器可以封装一个独立的MySQL实例，有其自身的配置和资源隔离。这是现代常用的方法 (D 正确)。\nE) 为每个实例使用不同的选项文件（option files）启动`mysqld`或`mysqld_safe`：每个选项文件可以指定不同的端口、套接字文件、数据目录、PID文件等，从而使多个实例可以共存 (E 正确)。\nF) 使用systemd并为每个实例配置不同的设置（例如，通过创建不同的systemd服务单元文件，每个单元文件指向不同的选项文件和参数）：systemd可以管理多个MySQL实例，并确保它们使用独立的配置 (F 正确)。\n\n错误选项分析：\nA) 和 B) CPU锁定（CPU affinity）和资源组是操作系统级别的资源管理工具，它们本身不直接“支持”运行多个MySQL实例，而是用于控制已运行实例的资源使用。虽然可以与多实例部署结合使用，但不是运行多实例的“方法”。\nC) 仅仅为每个实例定义`--datadir`是不够的。还需要确保端口号、套接字文件、PID文件、日志文件等也是唯一的，否则会发生冲突。所以这个选项不完整。\n\n**考点总结:**\n此题考察在单个主机上部署和管理多个MySQL实例的技术。核心在于配置隔离，包括使用不同的选项文件、利用容器化技术（如Docker）或使用现代服务管理框架（如systemd）进行精细化控制。",
+        "suggestion": "### 应试技巧与学习建议\n\n**应试技巧:**\n思考运行多个服务实例时最关键的隔离点：配置文件、数据存储、网络端口、进程标识。选择那些能够系统性解决这些隔离问题的方法。\n\n**学习建议:**\n学习如何在Linux或Windows上配置和运行多个MySQL实例。掌握如何为每个实例创建独立的选项文件（`my.cnf`），并指定不同的`port`, `socket`, `datadir`, `pid-file`, `log-error`等参数。了解使用Docker运行MySQL的优势和方法。如果使用systemd，学习如何创建和管理多个MySQL服务单元。"
+    },
+    {
+        "question": "### 试题 61:\n\nYour MySQL installation is running low on space due to binary logs. You need to reduce your log space usage urgently. Which two sets of actions when completed will accomplish this?",
+        "selections": {
+            "A": "Use PURGE BINARY LOGS TO `binlog_name`;",
+            "B": "Use SET GLOBAL binlog_expire_logs_seconds=`value` and run the FLUSH BINARY LOGS command.",
+            "C": "Use SET GLOBAL binlog_expire_logs_seconds=`value` and restart the server.",
+            "D": "Use SET PERSIST binlog_expire_logs_seconds=`value`.",
+            "E": "Set binlog_expire_logs_seconds = 0 in my.cnf and restart the server.",
+            "F": "Set binlog_expire_logs_seconds in my.cnf."
+        },
+        "answers": [
+            "A",
+            "B"
+        ],
+        "summary": "### 选项分析与考点总结\n\n**选项分析:**\n此题与试题59内容几乎完全相同，只是选项顺序可能不同。\nA) `PURGE BINARY LOGS TO '<binlog_name>';` (或 `PURGE BINARY LOGS BEFORE 'datetime_expression';`): 立即删除旧的二进制日志文件，这是最直接和紧急的清理方法 (A 正确)。\nB) `SET GLOBAL binlog_expire_logs_seconds=<value>;` 用于配置自动过期清理。单独设置不会立即删除，但配合 `FLUSH BINARY LOGS;`（轮转日志并可能触发清理检查）可以加速策略生效和潜在的旧日志清理 (B 正确)。\n\n错误选项分析同试题59。\n\n**考点总结:**\n再次强调管理和清理MySQL二进制日志以释放磁盘空间的方法。`PURGE BINARY LOGS`用于立即删除，而`binlog_expire_logs_seconds`（或`expire_logs_days`）用于配置自动清理策略。",
+        "suggestion": "### 应试技巧与学习建议\n\n**应试技巧:**\n重复的考点更应牢记。对于“紧急”需求，优先选择能立即产生效果的操作（如`PURGE`）。\n\n**学习建议:**\n参考试题59的学习建议。熟练掌握二进制日志的各种管理命令和配置参数。"
+    },
+    {
+        "question": "### 试题 62:\n\nThe replication for master and slave MySQL Server is up and running. The disk space occupied by the binary log files continues to grow. Which two methods manage this issue?",
+        "selections": {
+            "A": "Execute the FLUSH LOGS statement.",
+            "B": "Delete all binary log files manually on the file system to release storage space.",
+            "C": "Execute the PURGE BINARY LOGS statement.",
+            "D": "On the master server, disable binary logging by removing the --log-bin option",
+            "E": "Set the binlog_expire_logs_seconds variable."
+        },
+        "answers": [
+            "C",
+            "E"
+        ],
+        "summary": "### 选项分析与考点总结\n\n**选项分析:**\n管理二进制日志增长问题，主要有两种方法：手动清理和配置自动清理。\nC) 执行`PURGE BINARY LOGS`语句：可以手动删除指定日期之前或指定文件名之前的所有二进制日志文件，从而释放磁盘空间 (C 正确)。\nE) 设置`binlog_expire_logs_seconds`（或`expire_logs_days`）变量：配置这个动态或静态变量后，MySQL会自动删除超过指定保留时间的旧二进制日志文件。这是自动管理日志空间的推荐方法 (E 正确)。\n\n错误选项分析：\nA) `FLUSH LOGS`语句会关闭并重新打开所有日志文件，包括二进制日志（即轮转二进制日志）。轮转本身会创建一个新文件，但不会删除旧文件，除非同时配置了自动过期策略且有符合条件的旧日志。\nB) 手动在文件系统层面删除二进制日志文件是非常危险的，可能导致复制中断、数据不一致或影响时间点恢复。应始终使用MySQL提供的命令（如`PURGE BINARY LOGS`）来管理二进制日志。\nD) 禁用二进制日志会停止复制，这不是管理日志增长的方法，而是停止产生日志的方法。如果复制是必需的，则不能禁用二进制日志。\n\n**考点总结:**\n此题考察管理二进制日志磁盘空间占用的正确方法。核心是使用`PURGE BINARY LOGS`进行手动清理，以及配置`binlog_expire_logs_seconds`或`expire_logs_days`进行自动清理。",
+        "suggestion": "### 应试技巧与学习建议\n\n**应试技巧:**\n区分安全有效的日志管理方法和危险或不解决问题的方法。记住`PURGE`是手动删除，`expire_logs`相关变量是自动删除。\n\n**学习建议:**\n学习二进制日志的生命周期管理。掌握`PURGE BINARY LOGS`命令的各种语法（按文件名、按日期时间）。理解`binlog_expire_logs_seconds`和`expire_logs_days`参数如何工作，以及它们与日志轮转的关系。制定合理的日志保留策略，平衡磁盘空间、复制需求和时间点恢复窗口。"
+    },
+    {
+        "question": "### 试题 63:\n\nChoose two. You administer a three node, single primary InnoDB Cluster. Examine `cluster.status()` displayed here: `\"statusText\":\"Cluster is ONLINE and can tolerate up to ONE failure.\"`\nWhich two statements are true?",
+        "selections": {
+            "A": "If two instances are unreachable because of network failure, the cluster will reconfigure to work with a single instance.",
+            "B": "Reconfiguring the cluster as multi-primary, will increase tolerance to two failures.",
+            "C": "There is a quorum and transactions can be committed normally.",
+            "D": "If two instances crash, it will produce an outage.",
+            "E": "Restarting an arbitrary instance will always provoke primary instance failover.",
+            "F": "Shutting down two instances with the SHUTDOWN command will produce an outage."
+        },
+        "answers": [
+            "D",
+            "F"
+        ],
+        "summary": "### 选项分析与考点总结\n\n**选项分析:**\n集群状态为`ONLINE`且能容忍`ONE failure`。这是一个3节点的单主模式InnoDB集群。法定数量（quorum）是 `floor(N/2) + 1 = floor(3/2) + 1 = 1 + 1 = 2`。这意味着至少需要2个节点在线才能正常运行并处理写事务。\n\nD) 如果两个实例崩溃，只剩下1个实例在线。1个实例无法满足法定数量（2个），因此集群将无法处理写事务，导致服务中断（outage） (D 正确)。\nF) 使用`SHUTDOWN`命令关闭两个实例，同样会导致只剩下1个实例在线，无法满足法定数量，从而产生服务中断 (F 正确)。\n\n错误选项分析：\nA) 如果两个实例因网络故障而不可达，剩下的单个实例也无法形成法定数量。集群不会“重新配置”为单实例工作模式来处理写事务，它会进入只读或不可用状态，直到足够多的成员恢复连接。\nB) 将3节点的单主集群重新配置为多主模式，并不会将其容错能力从“容忍一个故障”增加到“容忍两个故障”。在3节点多主模式下，如果丢失2个节点，同样只剩下1个节点，无法形成多数派，写操作会停止。\nC) “Cluster is ONLINE and can tolerate up to ONE failure”意味着当前所有3个节点都在线且健康，形成了法定数量（3 > 2），因此事务可以正常提交。但题目问的是基于这个状态的推断。如果这是一个选择题，C本身描述了当前状态的含义，但D和F描述的是故障场景下的结果，更能体现“容忍一个故障”的含义。\nE) 重启一个非主实例通常不会导致主实例故障转移，除非重启过程中该实例被错误地选为新的主实例（可能性较低）。重启主实例则会触发故障转移。所以“总是”引发故障转移是不准确的。\n\n**考点总结:**\n此题考察对InnoDB集群（基于组复制）法定数量（quorum）和容错能力的理解。在单主模式下，N个节点的集群能容忍 `floor((N-1)/2)` 个节点故障。对于3节点集群，N=3，容错能力是 `floor((3-1)/2) = floor(1) = 1`。这意味着至少需要 `N - floor((N-1)/2) = 3 - 1 = 2` 个节点在线才能维持法定数量。",
+        "suggestion": "### 应试技巧与学习建议\n\n**应试技巧:**\n理解法定数量（quorum）是组复制和InnoDB集群的核心。对于N个节点的集群，多数派是`floor(N/2) + 1`。计算出法定数量后，判断不同故障场景下剩余节点数是否满足法定数量。\n\n**学习建议:**\n深入学习MySQL InnoDB Cluster的架构，特别是其底层的组复制技术。掌握法定数量的计算和意义，以及它如何保证数据一致性和防止脑裂。了解单主模式和多主模式的特性、优缺点和容错能力。学习如何监控集群状态（如使用`cluster.status()`）和处理成员故障。"
+    },
+    {
+        "question": "### 试题 64:\n\nChoose two. Which two MySQL Server accounts are locked by default?",
+        "selections": {
+            "A": "any new ROLE accounts",
+            "B": "any internal system accounts",
+            "C": "any user created with a username, but missing the host name",
+            "D": "any user set as DEFINER for stored programs",
+            "E": "any user created without a password"
+        },
+        "answers": [
+            "A",
+            "B"
+        ],
+        "summary": "### 选项分析与考点总结\n\n**选项分析:**\nMySQL中某些类型的账户在创建或存在时，默认可能是“锁定”的，或者具有使其无法直接登录的特性。\nA) 新创建的角色（ROLE accounts）本身不能用于登录。它们是权限的集合，需要被授予给用户账户，并且用户需要激活该角色才能使用其权限。从这个意义上说，角色账户可以被认为是“锁定的”（即不可直接登录） (A 正确)。\nB) MySQL有一些内部系统账户，例如用于内部进程或特定功能的账户（如`mysql.sys`, `mysql.session`, `mysql.infoschema`等，具体名称和行为可能因版本而异）。这些账户通常被设计为不能从外部登录，或者具有非常受限的权限，可以被视为默认“锁定”或不可用于常规登录 (B 正್ರೀ）。\n\n错误选项分析：\nC) 创建用户时如果只指定用户名而省略主机名，MySQL会报错，不允许创建这样的用户。必须指定主机部分（如`'user'@'localhost'`, `'user'@'%'`）。\nD) 作为存储过程、函数、视图或触发器的`DEFINER`的用户账户本身并不因此而被锁定。`DEFINER`指定了对象执行时的安全上下文。\nE) 在现代MySQL版本中（特别是启用了密码验证插件如`caching_sha2_password`），通常不允许创建没有密码的用户，或者创建后该用户也无法登录，直到设置密码。如果允许创建无密码用户（例如通过特定插件或旧版本行为），该用户理论上可以无密码登录（取决于服务器配置），所以不一定是“锁定”的。而且“锁定”通常指账户被显式禁用。\n\n**考点总结:**\n此题考察对MySQL中不同类型账户（用户、角色、系统账户）及其默认状态的理解。区分可登录的用户账户和用于其他目的（如权限集合、内部操作）的账户。\n\n**答案说明:** “锁定”的含义可能有些模糊。如果指“不能用于客户端直接登录”，那么A和B是合理的。如果指账户被显式`ACCOUNT LOCK`，则需要具体场景。",
+        "suggestion": "### 应试技巧与学习建议\n\n**应试技巧:**\n理解角色和用户账户的区别。思考哪些账户不是设计用来让最终用户直接登录和操作的。\n\n**学习建议:**\n学习MySQL的用户账户管理，包括创建用户、授予权限、设置密码、账户锁定/解锁（`ALTER USER ... ACCOUNT LOCK/UNLOCK`）。学习角色的概念和使用。了解MySQL内部可能存在的一些特殊用途的系统账户及其安全含义。"
+    },
+    {
+        "question": "### 试题 65:\n\nExamine this command, which executes successfully: `mysqlpump --user=root --password > full_backup.sql`\nWhich two databases will be excluded from this dump?",
+        "selections": {
+            "A": "world",
+            "B": "employee",
+            "C": "information_schema",
+            "D": "mysql",
+            "E": "sys"
+        },
+        "answers": [
+            "C",
+            "E"
+        ],
+        "summary": "### 选项分析与考点总结\n\n**选项分析:**\n`mysqlpump`是MySQL提供的一个逻辑备份工具，类似于`mysqldump`但有一些增强功能（如并行备份）。\n当`mysqlpump`在没有任何数据库或表名指定的情况下执行时（如本题所示，它没有`--all-databases`或特定数据库名），其默认行为是备份**所有用户创建的数据库中的所有表**。它会自动排除某些系统数据库。\nC) `information_schema`：这是一个虚拟的元数据数据库，包含关于服务器、数据库、表等的只读信息。它通常不被逻辑备份工具备份，因为它的内容是动态生成的，并且在恢复时会由服务器自动创建 (C 正确)。\nE) `sys` schema：这是一个包含许多视图、存储过程和函数以帮助DBA监控和诊断MySQL性能的系统数据库。它的内容也是基于其他系统表（如Performance Schema和Information Schema）动态生成的。`mysqlpump`默认会排除`sys` schema (E 正确)。\n\n错误选项分析：\nA) `world`：如果这是一个用户创建的数据库，`mysqlpump`（在无特定数据库指定时）会备份它。\nB) `employee`：同上，如果这是用户数据库，会被备份。\nD) `mysql`：`mysql`系统数据库包含用户账户、权限、时区信息等关键元数据。与`mysqldump`不同（`mysqldump --all-databases`会包含`mysql`库），`mysqlpump`在默认情况下（即不指定数据库时）会备份`mysql`数据库中的用户和权限信息（通过特定的方式，而不是简单dump所有表）。但如果题目问的是“哪些数据库会被排除”，`mysql`库本身（特别是其所有表）的处理比较特殊。不过，相对于`information_schema`和`sys`的明确排除，`mysql`库的排除不是那么绝对，或者说其备份方式不同。更准确地说，`mysqlpump` 默认不备份 `performance_schema`, `sys`, `ndbinfo`, `information_schema`。它会备份 `mysql` 库，但可能不包括所有内容，或者以特殊方式处理权限。\n\n**考点总结:**\n此题考察`mysqlpump`工具在默认情况下的备份范围，特别是哪些系统数据库会被自动排除。\n\n**答案精确性:** 根据MySQL官方文档，`mysqlpump` 默认情况下会排除 `information_schema`, `performance_schema`, `sys` 和 `ndbinfo` (如果存在)。它会备份`mysql`数据库，但不会备份其中的 `SYS_CONFIG` 表。因此，严格来说，`mysql` 数据库本身不会被完全排除。但`information_schema` 和 `sys` 是确定会被排除的。\n\n如果题目要求选择两个，C和E是最明确的被`mysqlpump`默认排除的系统数据库。",
+        "suggestion": "### 应试技巧与学习建议\n\n**应试技巧:**\n了解`mysqlpump`和`mysqldump`在默认行为和选项上的一些差异。记住哪些系统数据库通常不参与常规的逻辑备份。\n\n**学习建议:**\n学习`mysqlpump`工具的使用方法、主要选项和特性（如并行备份、压缩、用户账户处理、可扩展性等）。阅读官方文档中关于`mysqlpump`默认备份范围和排除规则的说明。进行实验以验证其行为。"
+    },
+    {
+        "question": "### 试题 66:\n\nChoose three. Which three commands can report all the current connections running on the MySQL server?",
+        "selections": {
+            "A": "SELECT * FROM performance_schema.events_transactions_current",
+            "B": "SELECT * FROM performance_schema.threads",
+            "C": "SHOW FULL PROCESSLIST",
+            "D": "SELECT * FROM information_schema.processlist",
+            "E": "SHOW EVENTS",
+            "F": "SELECT * FROM sys.metrics",
+            "G": "SELECT * FROM information_schema.events",
+            "H": "SELECT * FROM sys.statement_analysis"
+        },
+        "answers": [
+            "B",
+            "C",
+            "D"
+        ],
+        "summary": "### 选项分析与考点总结\n\n**选项分析:**\n查看当前MySQL服务器上的所有连接（线程）信息，可以使用以下方法：\nB) `SELECT * FROM performance_schema.threads;`：Performance Schema中的`threads`表记录了服务器中当前存在的所有线程的详细信息，包括前台用户连接线程和后台系统线程。可以从中筛选出用户连接 (B 正确)。\nC) `SHOW FULL PROCESSLIST;`：这是一个SQL命令，显示当前所有MySQL线程的列表，包括线程ID、用户、主机、连接的数据库、命令、状态、执行时间等信息。`FULL`关键字会显示完整的`Info`字段内容 (C 正确)。\nD) `SELECT * FROM information_schema.processlist;`：`information_schema.processlist`表提供了与`SHOW PROCESSLIST`命令相同的信息，允许通过SQL查询进行更灵活的筛选和处理 (D 正确)。\n\n错误选项分析：\nA) `performance_schema.events_transactions_current`：记录当前正在进行的事务事件，而不是连接本身。\nE) `SHOW EVENTS;`：显示事件调度器中已定义的事件，与当前连接无关。\nF) `sys.metrics`：是`sys` schema中的一个视图，总结了MySQL服务器的各种性能指标（基于Performance Schema和Information Schema），不直接列出连接。\nG) `information_schema.events`：提供关于事件调度器中事件的元数据，与当前连接无关。\nH) `sys.statement_analysis`：是`sys` schema中的视图，提供SQL语句的聚合统计信息，而不是当前连接列表。\n\n**考点总结:**\n此题考察查看MySQL服务器当前连接信息的常用方法。`SHOW [FULL] PROCESSLIST`是最直接的命令，而查询`information_schema.processlist`或`performance_schema.threads`表可以提供更结构化的数据访问。",
+        "suggestion": "### 应试技巧与学习建议\n\n**应试技巧:**\n记住“processlist”这个关键词，它与连接/线程列表密切相关。Performance Schema通常提供更底层和详细的信息。\n\n**学习建议:**\n熟练掌握`SHOW PROCESSLIST`命令及其输出的解读。学习如何通过`KILL`命令终止连接。了解`information_schema.processlist`表的列及其含义。学习使用Performance Schema中的`threads`表来获取更丰富的线程信息。了解`sys` schema中与连接和会话相关的视图，如`sys.session`, `sys.processlist`等，它们是对底层数据更友好的封装。"
+    },
+    {
+        "question": "### 试题 67:\n\nChoose three. Identify three functions of MySQL Enterprise Monitor.",
+        "selections": {
+            "A": "Analyze query performance.",
+            "B": "Start a logical backup.",
+            "C": "Determine the availability of monitored MySQL servers.",
+            "D": "Centrally manage users.",
+            "E": "Start a MySQL Enterprise backup.",
+            "F": "Centrally manage server configurations.",
+            "G": "Start and stop MySQL Server.",
+            "H": "Create customized alerts and provide notification alerts."
+        },
+        "answers": [
+            "A",
+            "C",
+            "H"
+        ],
+        "summary": "### 选项分析与考点总结\n\n**选项分析:**\nMySQL Enterprise Monitor (MEM) 是一个用于监控和管理MySQL服务器（包括社区版和企业版）的工具套件。\nA) 分析查询性能：MEM包含Query Analyzer功能，可以捕获、分析和诊断慢查询及高负载查询，提供执行计划、统计信息等 (A 正确)。\nC) 确定受监控MySQL服务器的可用性：MEM会持续监控服务器的健康状况和可连接性，并在服务器不可用时发出告警 (C 正确)。\nH) 创建自定义警报并提供通知：MEM允许用户配置基于各种指标和事件的警报规则，并通过邮件、SNMP等方式发送通知 (H 正确)。\n\n错误选项分析：\nB) 和 E) MEM本身不直接启动逻辑备份（如`mysqldump`）或物理备份（如MySQL Enterprise Backup）。它可以监控备份作业的状态（如果配置了相关顾问），但备份执行通常由专门的备份工具或脚本完成。\nD) 虽然MEM可以提供关于用户和权限的信息，但它主要是一个监控和建议工具，不是一个用于集中创建、修改或删除用户账户的管理工具。用户管理通常通过SQL命令或MySQL Workbench等工具进行。\nF) MEM可以监控服务器配置参数，并根据最佳实践提供建议，但它不直接提供一个界面来集中修改和推送服务器配置到多个实例。配置管理更多依赖配置文件或`SET PERSIST`等。\nG) MEM通常不直接用于启动和停止MySQL服务器实例。这通常由操作系统服务管理工具（如systemd, service）、脚本或MySQL Shell等完成。MEM可以报告服务器的启停状态。\n\n**考点总结:**\n此题考察对MySQL Enterprise Monitor核心功能的了解。主要包括性能监控（特别是查询分析）、可用性监控、基于规则的警报和通知，以及提供基于最佳实践的建议（Advisors）。",
+        "suggestion": "### 应试技巧与学习建议\n\n**应试技巧:**\n将MEM定位为一个“监控、分析、告警、建议”的平台。排除那些属于直接“操作”或“执行”（如启动备份、启停服务、管理用户）的选项，除非该操作是其核心监控反馈环的一部分。\n\n**学习建议:**\n了解MySQL Enterprise Monitor的架构（Service Manager, Agent, Repository, Dashboard/UI）。学习其主要功能模块，如实时监控、历史数据分析、Query Analyzer、Replication Monitor、Advisors（如安全、性能、复制相关的建议）。如果可能，实际部署和使用MEM以获得直观体验。"
+    },
+    {
+        "question": "### 试题 68:\n\nChoose three. Which three actions will secure a MySQL server from network-based attacks?",
+        "selections": {
+            "A": "Construct a perimeter network to allow public traffic",
+            "B": "Place the MySQL instance behind a firewall.",
+            "C": "Use network file system (NFS) for storing data.",
+            "D": "Change the listening port to 3307.",
+            "E": "Use MySQL Router to proxy connections to the MySQL server.",
+            "F": "Allow connections from the application server only."
+        },
+        "answers": [
+            "A",
+            "B",
+            "F"
+        ],
+        "summary": "### 选项分析与考点总结\n\n**选项分析:**\n此题与试题4内容相似，考察网络层面的安全防护措施。\nB) 将MySQL实例置于防火墙之后：防火墙可以根据预定义的规则（如允许特定IP、端口）过滤网络流量，阻止未授权访问 (B 正确)。\nF) 只允许来自应用服务器的连接：限制连接来源，将MySQL服务器的访问权限收紧到最小必要的范围，大大减少攻击面 (F 正确)。\nA) 构建边界网络（Perimeter Network，也称DMZ）来允许公共流量：这个选项有些歧义。如果MySQL服务器本身不直接暴露在公共网络，而是通过DMZ中的应用服务器或代理访问，这是一种安全架构。如果理解为“允许公共流量（访问MySQL）”，那就不安全。但如果理解为通过设计良好的网络分区（如DMZ）来隔离和保护内部MySQL服务器，同时允许受控的公共访问（例如通过Web应用），则可以视为一种安全措施。与B和F相比，这个选项的直接性稍差，但从网络架构安全角度是相关的。 假设这里的意图是，公共流量访问的是前端应用，应用再访问内部的MySQL，那么构建这样的分层网络是安全的 (A 可以认为是正确的，但表述不够清晰)。\n\n错误选项分析（理由同试题4）：\nC) 使用NFS存储数据：与网络攻击防护关系不大，可能引入其他风险。\nD) 更改监听端口：安全靠隐晦，效果有限。\nE) MySQL Router：主要用于高可用和负载均衡，不是主要的安全防御工具。\n\n**考点总结:**\n再次强调网络安全的核心原则：防火墙、最小化访问权限（白名单）、网络分段和隔离。选择那些能直接阻止或限制未授权网络连接的措施。\n\n**答案说明:** 如果必须严格选择最直接的“安全MySQL服务器”的措施，B和F是最直接的。A选项描述的是一种更宏观的网络安全架构策略，其有效性依赖于具体实现。如果题目只要求选两个，B和F是首选。如果必须选三个，A可以作为补充，但其表述需要更精确。",
+        "suggestion": "### 应试技巧与学习建议\n\n**应试技巧:**\n重复的考点要特别注意。防火墙和限制连接来源是网络安全的基础。考虑措施的直接性和有效性。\n\n**学习建议:**\n参考试题4的学习建议。学习网络安全的基本概念，如DMZ、网络分段、入侵检测/防御系统(IDS/IPS)等，以及它们如何应用于保护数据库服务器。"
+    },
+    {
+        "question": "### 试题 69:\n\nChoose two. Which two statements are true about MySQL server multi-source replication?",
+        "selections": {
+            "A": "It must use GTID replication.",
+            "B": "It is not compatible with auto-positioning.",
+            "C": "It needs to be re-instanced after a crash to maintain consistency.",
+            "D": "It uses only time-based replication conflict resolution.",
+            "E": "It does not attempt to detect or resolve replication conflicts.",
+            "F": "It relies on relay_log_recovery for resilient operations."
+        },
+        "answers": [
+            "E",
+            "F"
+        ],
+        "summary": "### 选项分析与考点总结\n\n**选项分析:**\n多源复制（Multi-Source Replication）允许一个从服务器从多个主服务器复制数据。\nF) 它依赖于`relay_log_recovery`来实现弹性操作：当从服务器（副本）上的SQL线程或I/O线程意外停止后，如果`relay_log_recovery=ON`（默认值），服务器在重启后会自动清理中继日志中可能已部分应用或损坏的事务，并从新的、一致的点重新开始应用。这对于所有复制类型（包括多源）的健壮性都很重要 (F 正确)。\nE) 它不尝试检测或解决复制冲突：多源复制本身不内置复制冲突（例如，来自不同主库的事务修改了从库上的同一行数据）的检测和解决机制。DBA需要自行设计数据模型和应用逻辑来避免冲突，或者使用第三方工具/策略来处理冲突 (E 正确)。\n\n错误选项分析：\nA) 多源复制的每个复制通道（channel）可以独立配置为使用GTID复制或传统的基于文件和位置的复制。并非所有通道都“必须”使用GTID。\nB) 自动定位（auto-positioning，即`MASTER_AUTO_POSITION=1`或`SOURCE_AUTO_POSITION=1`）是GTID复制的核心特性。多源复制的通道如果配置为GTID复制，就会使用自动定位。\nC) “re-instanced after a crash”描述过于模糊。像任何MySQL实例一样，崩溃后需要进行标准的恢复过程。多源复制本身不要求在崩溃后进行特殊的“re-instancing”来维护一致性，只要每个通道的复制状态正确恢复即可。\nD) 多源复制本身不提供基于时间的冲突解决。冲突解决是DBA的责任。\n\n**考点总结:**\n此题考察对MySQL多源复制的特性和限制的理解。关键在于其不内置冲突解决机制，以及依赖通用的复制健壮性特性（如中继日志恢复）。",
+        "suggestion": "### 应试技巧与学习建议\n\n**应试技巧:**\n理解多源复制的核心功能——从多个源聚合数据。思考这可能带来的挑战，如数据冲突。了解其配置灵活性（如每个通道可独立配置GTID）。\n\n**学习建议:**\n学习MySQL多源复制的配置步骤（创建复制通道、为每个通道指定主库信息和复制方式等）。了解其使用场景（如数据聚合、分片数据的集中备份/分析）。重点关注复制冲突的潜在问题以及如何避免或处理它们。熟悉`relay_log_recovery`等与复制健壮性相关的参数。"
+    },
+    {
+        "question": "### 试题 70:\n\nChoose two. Which two statements are true about using MySQL Enterprise Monitor Query Analyzer?",
+        "selections": {
+            "A": "It is possible to retrieve a normalized statement, but never the exact statement that was executed.",
+            "B": "The single query QRTi pie chart in the Query Analyzer view is based on the average execution of all statements.",
+            "C": "It is possible to import data into the Query Analyzer from heterogeneous sources, such as CSV.",
+            "D": "It is possible to list and analyze statements in an arbitrary graph range selection from timeseries graphs.",
+            "E": "It is possible to configure the Query Analysis built-in advisor to get notified about slow query execution."
+        },
+        "answers": [
+            "D",
+            "E"
+        ],
+        "summary": "### 选项分析与考点总结\n\n**选项分析:**\nMySQL Enterprise Monitor (MEM) 的 Query Analyzer 是一个强大的查询性能分析工具。\nD) Query Analyzer 提供了时间序列图表来展示查询的性能指标（如执行次数、延迟等）。用户可以在这些图表上选择一个任意的时间范围，然后查看并分析在该时间段内捕获到的SQL语句 (D 正确)。\nE) Query Analyzer 与MEM的顾问（Advisors）系统集成。可以配置与查询分析相关的顾问规则（例如，基于慢查询阈值、高执行频率等），当满足条件时，顾问会生成事件并可以触发通知 (E 正确)。\n\n错误选项分析：\nA) Query Analyzer 会捕获和显示执行的SQL语句。它通常会显示规范化（normalized）的语句（例如，将字面量替换为占位符以聚合相似查询），但它也会存储并可以显示语句的示例（example statements），这些示例就是实际执行的语句。所以说“从不显示确切语句”是错误的。\nB) QRTi (Query Response Time index) 是一个衡量查询响应时间的指标。Query Analyzer 中的饼图或条形图通常是基于总执行时间、平均延迟、执行次数等对各个查询进行排名和可视化，而不是“所有语句的平均执行”。它会区分不同的查询。\nC) Query Analyzer 的数据主要来源于MEM Agent从受监控MySQL服务器上收集的性能数据（如Performance Schema、慢查询日志等）。它不是一个通用的数据导入工具，不支持从CSV等异构源导入查询数据进行分析。\n\n**考点总结:**\n此题考察对MySQL Enterprise Monitor Query Analyzer功能的理解。核心功能包括捕获和分析SQL语句、提供时间序列性能视图、允许按时间范围筛选、显示规范化语句和示例语句，以及与顾问系统集成以进行告警和建议。",
+        "suggestion": "### 应试技巧与学习建议\n\n**应试技巧:**\n理解Query Analyzer作为性能诊断工具的核心价值：找出慢查询、高负载查询，并提供分析依据。关注其数据来源、分析维度和交互方式。\n\n**学习建议:**\n学习MySQL Enterprise Monitor Query Analyzer的界面和主要功能。了解它如何收集查询数据（例如，通过Performance Schema的语句摘要表或慢查询日志）。掌握如何使用它来识别性能瓶颈查询，查看执行计划、统计信息和示例语句。熟悉其与MEM Advisors的集成。"
+    },
+    {
+        "question": "### 试题 71:\n\nYou must export data from a set of tables in the `world_x` database. Examine this set of tables: `Tables (country, countryinfo, location)`\nWhich two options will export data into one or more files?",
+        "selections": {
+            "A": "shell> `mysqldump world_x country countryinfo location > mydump.sql`",
+            "B": "mysql> ```SELECT * INTO OUTFILE '/output/country.txt' FROM world_x.country;\nmysql> SELECT * INTO OUTFILE '/output/countryinfo.txt' FROM world_x.countryinfo;\nmysql> SELECT * INTO OUTFILE '/output/location.txt' FROM world_x.location;```",
+            "C": "shell> `mysqlexport world_x country countryinfo location > mydump.sql`",
+            "D": "mysql> ```CLONE LOCAL DATA DIRECTORY = '/var/lib/mysql/world_x/country';\nmysql> CLONE LOCAL DATA DIRECTORY = '/var/lib/mysql/world_x/countryinfo';\nmysql> CLONE LOCAL DATA DIRECTORY = '/var/lib/mysql/world_x/location';```",
+            "E": "shell> `mysql --batch world_x.country world_x.countryinfo world_x.location > mydump.sql`"
+        },
+        "answers": [
+            "A",
+            "B"
+        ],
+        "summary": "### 选项分析与考点总结\n\n**选项分析:**\n导出MySQL表数据到文件有多种方法。\nA) `shell> mysqldump world_x country countryinfo location > mydump.sql`：`mysqldump`是一个常用的逻辑备份工具。这个命令会将`world_x`数据库中的`country`, `countryinfo`, `location`这三个表的结构和数据导出到一个名为`mydump.sql`的SQL脚本文件中 (A 正确)。\nB) 使用`SELECT ... INTO OUTFILE`语句：这个SQL命令可以将查询结果导出到服务器主机上的一个文本文件中。为每个表执行一次该命令，可以将每个表的数据分别导出到不同的文本文件（如`.txt`或`.csv`格式） (B 正确)。\n\n错误选项分析：\nC) `mysqlexport`：没有名为`mysqlexport`的标准MySQL命令行工具。\nD) `CLONE LOCAL DATA DIRECTORY`：这是MySQL克隆功能的命令，用于创建实例的物理副本，不是导出数据到文本或SQL文件。\nE) `shell> mysql --batch world_x.country ... > mydump.sql`：`mysql`命令行客户端配合`--batch`（或`-B`）和重定向可以执行SQL并输出结果，但通常用于执行查询并获取其文本输出，而不是像`mysqldump`那样生成完整的建表和插入语句的SQL脚本。直接将表名作为参数传递给`mysql`命令来导出数据是不标准的。\n\n**考点总结:**\n此题考察导出MySQL数据的常用方法。`mysqldump`用于逻辑备份（导出SQL文件），`SELECT ... INTO OUTFILE`用于将查询结果导出到文本文件。需要注意工具的名称和正确用法。",
+        "suggestion": "### 应试技巧与学习建议\n\n**应试技巧:**\n区分逻辑导出（生成SQL或文本数据）和物理复制。记住`mysqldump`是标准的逻辑备份工具。`SELECT ... INTO OUTFILE`是SQL层面的数据导出方法。\n\n**学习建议:**\n熟练掌握`mysqldump`工具的各种选项，包括如何备份整个数据库、特定数据库、特定表，以及如何只备份数据、只备份结构或同时备份两者。学习`SELECT ... INTO OUTFILE`和`LOAD DATA INFILE`语句的使用，以及它们与`secure_file_priv`系统变量的关系。了解不同导出格式（SQL, CSV, TSV等）的特点和适用场景。"
+    },
+    {
+        "question": "### 试题 72:\n\nChoose three. Which are three benefits of using mysqlbackup instead of mysqldump?",
+        "selections": {
+            "A": "mysqlbackup can perform partial backup of stored programs.",
+            "B": "mysqlbackup allows logical backups with concurrency resulting in faster backups and restores.",
+            "C": "mysqlbackup integrates tape backup and has the virtual tape option.",
+            "D": "mysqlbackup can back up tables with the InnoDB engine without blocking reducing wait times due to contention.",
+            "E": "mysqlbackup does not back up MySQL system tables, which shortens backup time.",
+            "F": "mysqlbackup restores data from physical backups, which are faster than logical backups."
+        },
+        "answers": [
+            "C",
+            "D",
+            "F"
+        ],
+        "summary": "### 选项分析与考点总结\n\n**选项分析:**\n`mysqlbackup` (即 MySQL Enterprise Backup) 是一个企业级物理备份工具，与逻辑备份工具`mysqldump`相比有一些优势。\nC) `mysqlbackup`支持与介质管理软件（MMS）集成以进行磁带备份，并提供了虚拟磁带（virtual tape）选项。这使得它可以用于更复杂和企业级的备份归档策略 (C 正确)。\nD) `mysqlbackup`执行的是热物理备份。对于InnoDB表，它可以在不阻塞读写操作的情况下进行备份（或阻塞时间非常短），从而减少因锁争用导致的等待时间。这对于高并发环境非常重要 (D 正确)。\nF) `mysqlbackup`创建的是物理备份。从物理备份恢复数据通常比从逻辑备份（如`mysqldump`产生的SQL文件，需要逐条执行SQL语句）恢复要快得多，特别是在数据量很大时 (F 正确)。\n\n错误选项分析：\nA) `mysqlbackup`是物理备份，它备份整个数据文件。存储过程等对象作为数据字典或系统表的一部分被物理备份，它不专门执行“部分备份存储程序”。部分备份通常指备份特定的数据库或表。\nB) `mysqlbackup`主要执行物理备份，而不是逻辑备份。虽然它有一些选项可以进行类似逻辑的操作（如传输表空间），但其核心是物理的。逻辑备份的并发性是`mysqlpump`的特点。\nE) `mysqlbackup`作为物理备份，会备份包括系统表（如`mysql`数据库中的表）在内的所有构成MySQL实例的文件。不备份系统表会使恢复后的实例不完整。\n\n**考点总结:**\n此题考察MySQL Enterprise Backup (`mysqlbackup`) 相对于`mysqldump`的主要优势。核心在于物理备份的热备能力（减少阻塞）、恢复速度快以及对企业级特性（如磁带备份集成）的支持。",
+        "suggestion": "### 应试技巧与学习建议\n\n**应试技巧:**\n理解物理备份和逻辑备份的根本区别。物理备份通常更快、对在线业务影响更小（热备），但可能不够灵活（如跨版本、跨平台恢复）。逻辑备份更灵活，但备份和恢复时间较长。\n\n**学习建议:**\n学习MySQL Enterprise Backup的使用方法、特性和不同类型的备份（完全备份、增量备份、压缩备份、加密备份等）。了解它如何与InnoDB存储引擎交互以实现热备份。对比其与`mysqldump`和开源物理备份工具（如Percona XtraBackup）的异同。熟悉其恢复流程。"
+    },
+    {
+        "question": "### 试题 73:\n\nChoose two. All MySQL Server instances belonging to InnoDB Cluster have SSL configured and enabled. You must configure InnoDB Cluster to use SSL for group communication.\nWhich two statements are true?",
+        "selections": {
+            "A": "An existing InnoDB Cluster must be dissolved and created from scratch to enable SSL for group communication.",
+            "B": "If only some InnoDB Cluster members are enabled for SSL group communication, and --ssl-mode=PREFERRED, communication will fall back to unencrypted connection.",
+            "C": "SSL group communication must be enabled at cluster creation time by specifying createCluster(memberSslMode:'REQUIRED').",
+            "D": "SSL group communication can be enabled for an existing cluster, one instance at time, by setting group_replication_ssl_mode.",
+            "E": "SSL group communication requires the use of an additional set of parameters group_replication_recovery_*.",
+            "F": "Configuring SSL group communication also configures SSL distributed recovery."
+        },
+        "answers": [
+            "A",
+            "C"
+        ],
+        "summary": "### 选项分析与考点总结\n\n**选项分析:**\n为InnoDB集群的组通信（Group Communication System, GCS）启用SSL加密有一些特定要求。\nA) 根据MySQL文档，为InnoDB集群的组通信启用或禁用SSL通常需要在集群层面进行，并且不能在现有集群上动态更改。这意味着如果集群创建时未启用组通信SSL，要启用它，通常需要解散现有集群并重新创建一个启用了SSL的集群 (A 正确)。\nC) 在使用MySQL Shell的AdminAPI创建InnoDB集群时，可以通过`createCluster()`命令的选项来指定组通信的SSL模式。例如，设置`memberSslMode: 'REQUIRED'`可以强制所有组内通信使用SSL (C 正确)。\n\n错误选项分析：\nB) 如果组通信SSL模式设置为`REQUIRED`，则所有成员都必须使用SSL。如果设置为`PREFERRED`，成员会尝试使用SSL，但如果无法建立SSL连接（例如，证书问题或部分成员未配置SSL），通信可能会失败或（在某些特定配置下，但不推荐）降级。但组复制通常要求所有成员在SSL配置上保持一致以保证安全。\nD) 组通信的SSL模式是集群级别的设置，不是在单个实例上通过设置`group_replication_ssl_mode`（这是一个MySQL服务器变量，用于组复制本身的SSL，与GCS的SSL配置方式不同）逐个启用的。更改GCS的SSL通常涉及集群重建。\nE) `group_replication_recovery_*`参数用于配置组复制的分布式恢复过程（如通过SSL进行状态传输），与组通信本身的SSL配置是相关的但不同的参数集。\nF) 组通信的SSL配置和分布式恢复的SSL配置是分开的，尽管它们都可能使用SSL。启用组通信SSL不自动意味着分布式恢复也配置为使用SSL（虽然通常建议两者都用SSL）。\n\n**考点总结:**\n此题考察为InnoDB集群的组内通信启用SSL加密的配置方法和限制。关键在于这通常是在集群创建时决定的，并且更改可能需要重建集群。",
+        "suggestion": "### 应试技巧与学习建议\n\n**应试技巧:**\n理解InnoDB集群中不同层面的SSL：客户端到服务器的SSL连接、组复制成员之间的SSL（用于XCom/GCS通信）、分布式恢复的SSL。关注题目特指的“group communication”的SSL。\n\n**学习建议:**\n学习如何使用MySQL Shell AdminAPI部署和管理InnoDB集群。详细阅读官方文档中关于为InnoDB集群配置SSL/TLS的部分，包括`createCluster()`命令的相关选项（如`memberSslMode`, `ipAllowlist`等）以及与组复制相关的SSL参数（如`group_replication_ssl_mode`, `group_replication_recovery_use_ssl`等）。了解安全配置的最佳实践。"
+    },
+    {
+        "question": "### 试题 74:\n\nAfter installing MySQL 8.0 on Oracle Linux 7, you initialize the data directory with the `mysqld --initialize` command. Which two will assist in locating the root password?",
+        "selections": {
+            "A": "the root_pw variable stored in the mysql.install table",
+            "B": "the root password displayed on the screen via a Warning message",
+            "C": "the root password inserted in the error log set by the --log-error=file_name variable",
+            "D": "the root password written to the /root/.my.cnf file",
+            "E": "as root, executing the SHOW PASSWORD command by using the SHA-256 password encryption plugin"
+        },
+        "answers": [
+            "B",
+            "C"
+        ],
+        "summary": "### 选项分析与考点总结\n\n**选项分析:**\n当使用`mysqld --initialize`（或`mysqld --initialize-insecure`）初始化MySQL 8.0数据目录时，会为`'root'@'localhost'`用户生成一个临时密码（除非使用`--initialize-insecure`，那样会创建无密码的root用户）。\nB) 如果`mysqld --initialize`是在前台运行且标准错误输出到屏幕，临时密码通常会作为一条`[Warning]`或`[Note]`信息直接显示在屏幕上 (B 正确)。\nC) 临时密码也会被记录到MySQL的错误日志文件中。错误日志文件的位置由`--log-error`参数指定（如果在初始化命令中或`my.cnf`中设置了），或者使用默认位置 (C 正确)。\n\n错误选项分析：\nA) 没有名为`mysql.install`的表，也不存在存储root密码的`root_pw`变量以这种方式暴露。\nD) 临时密码不会写入`/root/.my.cnf`文件。`.my.cnf`是MySQL的选项配置文件。\nE) `SHOW PASSWORD`命令用于加密一个给定的字符串，而不是显示现有用户的密码。并且，这需要在已登录MySQL的情况下执行，而此时我们正是需要密码来登录。\n\n**考点总结:**\n此题考察MySQL 8.0初始化数据目录后如何获取初始root用户的临时密码。主要途径是查看初始化命令的屏幕输出和MySQL错误日志。",
+        "suggestion": "### 应试技巧与学习建议\n\n**应试技巧:**\n记住`mysqld --initialize`后的密码获取方式。区分“初始化时生成的临时密码”和“后续用户自己设置的密码”。\n\n**学习建议:**\n学习MySQL的初始化过程，特别是`mysqld --initialize`和`mysqld --initialize-insecure`命令的区别和作用。掌握如何定位MySQL错误日志文件。熟悉初始化后首次登录MySQL并修改root密码的步骤（使用`ALTER USER`命令）。"
+    },
+    {
+        "question": "### 试题 75:\n\nChoose two. Identify two ways to significantly improve data security.",
+        "selections": {
+            "A": "Configure mysqld to run as the system admin account, such as root.",
+            "B": "Use a private network behind a firewall.",
+            "C": "Configure mysqld to use only networked disks.",
+            "D": "Configure MySQL to have only one administrative account.",
+            "E": "Configure mysqld to use only local disks or attached disks and to have its own account in the host system."
+        },
+        "answers": [
+            "B",
+            "E"
+        ],
+        "summary": "### 选项分析与考点总结\n\n**选项分析:**\n提升数据安全性的方法涉及网络、操作系统和MySQL自身配置等多个层面。\nB) 使用私有网络并将MySQL服务器置于防火墙之后：这限制了对MySQL服务器的网络访问，只允许来自受信任网络的连接，是重要的网络安全措施 (B 正确)。\nE) 配置`mysqld`使用本地或直连磁盘，并在主机系统上为其创建专用的、低权限的操作系统账户（如`mysql`用户）：使用专用账户运行`mysqld`服务遵循最小权限原则，即使服务被攻破，攻击者获得的权限也受限于该账户。使用本地或直连磁盘相对于网络磁盘（如NFS）可以减少网络相关的安全风险和依赖 (E 正确)。\n\n错误选项分析：\nA) 以系统管理员账户（如`root`）运行`mysqld`是极不安全的做法，会带来巨大风险。\nC) “只使用网络磁盘”本身不一定提升安全性，反而可能引入额外的网络依赖和安全考虑（如网络嗅探、NFS权限配置等）。安全性取决于网络磁盘的配置和管理。\nD) “只有一个管理账户”可能过于集中风险。通常建议根据职责分离原则创建多个具有不同管理权限的账户，并遵循最小权限原则。但如果这个“一个管理账户”指的是避免泛滥的、权限过高的账户，那么有一定的合理性，但表述不佳。更重要的是权限控制，而非数量。\n\n**考点总结:**\n此题考察提升MySQL数据安全性的综合措施。网络隔离（防火墙、私有网络）和操作系统层面的安全（专用低权限运行账户、安全的存储介质）是关键方面。\n\n**OCR中的分析“网络隔离最好，D的问题是administrator这个权限太大了，应该有多个administrative account, 每个只有部分权限”有一定的道理，但E选项结合了OS用户权限和磁盘选择，也是重要的安全实践。**",
+        "suggestion": "### 应试技巧与学习建议\n\n**应试技巧:**\n从多个层面思考数据安全：网络层、操作系统层、MySQL应用层。遵循安全的基本原则，如最小权限、纵深防御、职责分离。\n\n**学习建议:**\n全面学习MySQL安全最佳实践，包括：\n-   网络安全：防火墙、`bind-address`、SSL/TLS加密连接、禁用不必要的协议。\n-   操作系统安全：使用专用`mysql`用户运行服务、严格的文件系统权限、禁用不必要的OS服务。\n-   MySQL账户和权限管理：强密码策略、最小权限原则、角色管理、定期审计用户权限。\n-   数据加密：静态数据加密（TDE）、动态数据加密（SSL/TLS）、备份加密。\n-   定期打补丁和更新。\n-   应用安全：防范SQL注入等。"
+    },
+    {
+        "question": "### 试题 76:\n\nWhich two are valid uses for binary logs on a MySQL instance?",
+        "selections": {
+            "A": "logging the duration and locks for all queries",
+            "B": "replication",
+            "C": "audit of all queries",
+            "D": "point-in-time recovery",
+            "E": "recording the order in which queries are issued"
+        },
+        "answers": [
+            "B",
+            "D"
+        ],
+        "summary": "### 选项分析与考点总结\n\n**选项分析:**\n二进制日志（binary logs）是MySQL中非常重要的日志类型，主要用于以下目的：\nB) 复制（Replication）：从服务器（副本）通过读取主服务器的二进制日志来复制数据更改，从而实现数据同步和负载均衡等 (B 正确)。\nD) 时间点恢复（Point-in-Time Recovery, PITR）：结合全量备份（如`mysqldump`或物理备份）和自备份以来产生的所有二进制日志，可以将数据库恢复到过去的任意一个精确时间点 (D 正确)。\n\n错误选项分析：\nA) 二进制日志记录的是导致数据更改的事件（语句或行更改），不直接记录所有查询的执行时长和锁信息。查询时长和锁信息通常由慢查询日志、Performance Schema或第三方监控工具提供。\nC) 二进制日志不用于审计所有查询。它主要记录修改数据的操作。要审计所有查询（包括SELECT），需要使用MySQL Enterprise Audit插件或通用查询日志（general query log，但后者对性能影响较大）。\nE) 二进制日志确实按顺序记录了导致数据更改的事件，但其主要用途不是简单地“记录查询发出的顺序”，而是用于复制和恢复。如果说“记录数据更改事件的顺序”则更准确。\n\n**考点总结:**\n此题考察MySQL二进制日志的两个核心用途：复制和时间点恢复。这是DBA必须掌握的基础知识。",
+        "suggestion": "### 应试技巧与学习建议\n\n**应试技巧:**\n记住binlog的两大核心功能。将binlog与其他类型的日志（如错误日志、慢查询日志、通用查询日志、审计日志）区分开来。\n\n**学习建议:**\n深入理解二进制日志的格式（STATEMENT, ROW, MIXED）、内容和管理。学习如何配置和使用二进制日志进行复制（主从复制、组复制等）。掌握基于二进制日志进行时间点恢复的完整步骤。了解与二进制日志相关的工具（如`mysqlbinlog`）。"
+    },
+    {
+        "question": "### 试题 77:\n\nChoose two. Which two are features of MySQL Enterprise Firewall?",
+        "selections": {
+            "A": "blocking of potential threats by configuring pre-approved whitelists",
+            "B": "modifying SQL statement dynamically with substitutions",
+            "C": "recording incoming SQL statement to facilitate the creation of a whitelist of permitted commands",
+            "D": "automatic locking of user accounts who break your firewall",
+            "E": "provides stateless firewall access to TCP/3306"
+        },
+        "answers": [
+            "A",
+            "C"
+        ],
+        "summary": "### 选项分析与考点总结\n\n**选项分析:**\nMySQL Enterprise Firewall 是一种应用层防火墙，用于保护MySQL服务器免受未授权SQL语句的攻击。\nA) 通过配置预先批准的SQL语句白名单来阻止潜在威胁：这是防火墙的核心功能。在`PROTECTING`模式下，只有在白名单中（或与白名单中的模式匹配）的SQL语句才允许执行 (A 正确)。\nC) 记录传入的SQL语句以帮助创建允许命令的白名单：防火墙具有`RECORDING`模式，在此模式下，它会记录特定用户执行的所有SQL语句的规范化形式，DBA可以审查这些记录并将其选入白名单 (C 正确)。\n\n错误选项分析：\nB) 防火墙不动态修改SQL语句并替换内容。它要么允许语句通过，要么阻止语句执行。\nD) 防火墙在`PROTECTING`模式下会阻止不符合白名单的语句，并可能记录这些事件。但它不直接“自动锁定用户账户”。账户锁定是MySQL用户账户管理的功能（`ALTER USER ... ACCOUNT LOCK`）。\nE) “无状态防火墙访问TCP/3306”描述更像是网络层防火墙的行为。MySQL Enterprise Firewall是应用层的、有状态的（因为它维护白名单和用户模式）。\n\n**考点总结:**\n此题考察MySQL Enterprise Firewall的关键特性，特别是其基于白名单的防护机制和用于生成白名单的记录模式。",
+        "suggestion": "### 应试技巧与学习建议\n\n**应试技巧:**\n理解MySQL Enterprise Firewall的核心工作原理：学习（RECORDING模式）-> 定义白名单 -> 防护（PROTECTING模式）。\n\n**学习建议:**\n学习MySQL Enterprise Firewall的部署和配置流程。掌握不同操作模式（`OFF`, `DETECTING`, `RECORDING`, `PROTECTING`）的含义和用途。了解如何管理用户防火墙配置文件和白名单规则。熟悉相关的存储过程和Information Schema视图。"
+    },
+    {
+        "question": "### 试题 78:\n\nChoose three. Which three methods display the complete table definition of an InnoDB table?",
+        "selections": {
+            "A": "hexdump -v -C table.frm",
+            "B": "REPAIR TABLE table USE_FRM",
+            "C": "mysqldump --no-data schema table",
+            "D": "Query the Information Schema.",
+            "E": "SELECT * FROM table1\\G",
+            "F": "SHOW CREATE TABLE table"
+        },
+        "answers": [
+            "C",
+            "D",
+            "F"
+        ],
+        "summary": "### 选项分析与考点总结\n\n**选项分析:**\n获取InnoDB表的完整定义（包括列、数据类型、索引、约束、表选项等）有多种方法。\nC) `mysqldump --no-data schema_name table_name`：`mysqldump`配合`--no-data`（或`-d`）选项可以只导出表的结构定义（`CREATE TABLE`语句），而不包含数据。指定数据库名和表名可以精确到特定表 (C 正确)。\nD) 查询`INFORMATION_SCHEMA`：`INFORMATION_SCHEMA`数据库包含许多元数据表（如`TABLES`, `COLUMNS`, `STATISTICS`, `TABLE_CONSTRAINTS`, `KEY_COLUMN_USAGE`等），通过组合查询这些表可以获取表的完整定义信息。虽然不如`SHOW CREATE TABLE`直接，但它提供了结构化的元数据访问 (D 正确)。\nF) `SHOW CREATE TABLE table_name;`：这个SQL命令会返回一个包含完整`CREATE TABLE`语句的结果，该语句可以用来重新创建具有相同定义的表。这是获取表定义最直接和常用的方法 (F 正确)。\n\n错误选项分析：\nA) `hexdump -v -C table.frm`：在MySQL 8.0之前，MyISAM和部分其他引擎的表定义存储在`.frm`文件中。`hexdump`可以查看文件的二进制内容，但这不是一个易于理解或“显示完整定义”的方式，且对InnoDB表（其定义主要在数据字典中）不适用。MySQL 8.0后，`.frm`文件已废弃，所有元数据在数据字典中。\nB) `REPAIR TABLE table_name USE_FRM`：这是一个修复表的命令，用于在`.frm`文件损坏或丢失时尝试从数据字典恢复（或反之），不是显示表定义的标准方法。\nE) `SELECT * FROM table_name\\G`：这个命令用于查询并显示表中的所有数据，以垂直格式展示。它不显示表的结构定义。\n\n**考点总结:**\n此题考察获取MySQL表结构定义（特别是InnoDB表）的常用方法。`SHOW CREATE TABLE`是最直接的，`mysqldump --no-data`用于导出结构，查询`INFORMATION_SCHEMA`提供底层元数据访问。\n\n**OCR答案提示“8里面没有frm”是正确的，这使得A和B选项在MySQL 8.0+环境中更不适用。**",
+        "suggestion": "### 应试技巧与学习建议\n\n**应试技巧:**\n记住`SHOW CREATE TABLE`是查看表定义最方便的命令。了解`mysqldump`在结构导出方面的能力。知道`INFORMATION_SCHEMA`是元数据的标准访问接口。\n\n**学习建议:**\n熟练掌握`SHOW CREATE TABLE`命令。学习`mysqldump`的各种选项，特别是与结构和数据导出相关的。熟悉`INFORMATION_SCHEMA`中与表定义相关的核心表及其列，练习通过查询它们来获取表信息。了解MySQL 8.0数据字典对元数据存储的改变（不再依赖`.frm`文件）。"
+    },
+    {
+        "question": "### 试题 79:\n\nWhich two statements are true about the `mysql_config_editor` program?",
+        "selections": {
+            "A": "It provides an interface to change my.cnf files.",
+            "B": "It manages the configuration of client programs. (only work for mysql client)",
+            "C": "It can move datadir to a new location.",
+            "D": "It manages the configuration of user privileges for accessing the server.",
+            "E": "It will use client options by default unless you provide --login-path. (mysql = mysql --login-path=client)",
+            "F": "It manages the configuration of the MySQL Firewall feature.",
+            "G": "It can be used to create and edit SSL certificates and log locations."
+        },
+        "answers": [
+            "B",
+            "E"
+        ],
+        "summary": "### 选项分析与考点总结\n\n**选项分析:**\n`mysql_config_editor`是一个用于创建和管理加密的登录路径选项文件（通常是`~/.mylogin.cnf`）的工具。这个文件允许MySQL客户端程序（如`mysql`, `mysqldump`等）使用预存的、加密的连接参数（如主机、用户、密码、端口等）通过`--login-path`选项进行连接。\nB) 它管理客户端程序的配置（通过创建登录路径）。虽然“only work for mysql client”这个括号里的说明可能不完全精确（其他客户端程序如果支持读取`.mylogin.cnf`和`--login-path`也可以使用），但其主要目的是为客户端提供安全的连接参数存储 (B 正确)。\nE) 如果`.mylogin.cnf`文件中存在一个名为`client`的默认登录路径，并且客户端程序在启动时没有指定`--login-path`，那么客户端可能会尝试使用这个`client`登录路径下的选项。或者更一般地说，客户端程序通常会按一定顺序查找选项（命令行 -> `~/.mylogin.cnf`（如果指定`--login-path`）-> 选项文件 -> 环境变量 -> 内建默认值）。`mysql_config_editor`创建的`.mylogin.cnf`中的条目（登录路径）只有在被客户端明确通过`--login-path`引用时才会被使用。然而，这个选项的表述“unless you provide --login-path”暗示了某种默认行为。如果`mysql = mysql --login-path=client`这部分是解释，它表明`mysql`客户端默认会查找`client`登录路径。 (E 的表述可能有些混淆，但核心是`mysql_config_editor`创建的登录路径需要客户端通过`--login-path`使用，或者客户端有某种默认查找行为）。更准确地说，`mysql_config_editor`本身不直接“使用”选项，而是创建供客户端使用的选项。\n\n错误选项分析：\nA) 它不直接修改`my.cnf`文件。它创建和管理的是一个独立的、加密的`.mylogin.cnf`文件。\nC) 它不用于移动`datadir`。`datadir`是服务器配置，通过`my.cnf`或服务器启动参数设置。\nD) 它不管理用户权限。用户权限是通过`GRANT`/`REVOKE`等SQL命令在服务器端管理的。\nF) 它不管理MySQL Enterprise Firewall的配置。防火墙配置通过特定的存储过程和系统表管理。\nG) 它不用于创建或编辑SSL证书。SSL证书是单独生成和管理的。它可以在登录路径中存储SSL相关的连接参数（如证书文件路径），但不能创建证书本身。日志位置通常在`my.cnf`或服务器启动参数中配置。\n\n**考点总结:**\n此题考察`mysql_config_editor`工具的主要功能：安全地存储和管理MySQL客户端连接参数（登录路径）。\n\n**答案E的进一步解释:** MySQL客户端程序在查找连接选项时，如果`--login-path`选项被使用，它会优先从`.mylogin.cnf`的指定登录路径中获取。如果`.mylogin.cnf`中存在一个名为 `[client]` 的组，并且没有其他更优先的选项（如命令行参数）覆盖，那么这个 `[client]` 组中的选项可能会被所有客户端程序作为默认选项使用。所以E选项可以理解为，如果你不指定特定的登录路径，客户端可能会尝试使用一个默认的（比如名为`client`的）登录路径配置。",
+        "suggestion": "### 应试技巧与学习建议\n\n**应试技巧:**\n记住`mysql_config_editor`的核心功能是“加密存储客户端连接参数”。将其与其他配置工具或管理功能区分开。\n\n**学习建议:**\n学习如何使用`mysql_config_editor`命令（如`set`, `remove`, `print`, `reset`子命令）来创建、修改、查看和删除登录路径。了解`.mylogin.cnf`文件的作用和安全性。熟悉MySQL客户端程序如何通过`--login-path`选项使用这些预存的连接参数。"
+    },
+    {
+        "question": "### 试题 80:\n\nChoose three. A MySQL server is monitored using MySQL Enterprise Monitor's agentless installation. Which three features are available with this installation method?",
+        "selections": {
+            "A": "MySQL Replication monitoring",
+            "B": "security-related advisor warnings",
+            "C": "CPU utilization",
+            "D": "disk usage and disk characteristics including disk advisors warnings",
+            "E": "MySQL Query Analysis data",
+            "F": "operating system memory utilization",
+            "G": "network-related information and network characteristics"
+        },
+        "answers": [
+            "A",
+            "B",
+            "E"
+        ],
+        "summary": "### 选项分析与考点总结\n\n**选项分析:**\nMySQL Enterprise Monitor (MEM) 的“无代理安装”（agentless installation）指的是不直接在被监控的MySQL主机上安装MEM Agent，而是通过远程连接从MySQL服务器本身获取信息。这种方式收集的信息范围会受到限制，主要依赖于MySQL服务器通过SQL接口暴露的状态变量、Performance Schema、Information Schema等。\nA) MySQL复制监控：MEM可以通过查询复制相关的状态变量（如`SHOW REPLICA STATUS`或`SHOW SLAVE STATUS`的输出）和Performance Schema中的复制相关表来监控复制的健康状况、延迟等。这些信息可以通过远程SQL连接获取 (A 正确)。\nB) 安全相关的顾问警告：MEM的顾问功能可以分析MySQL的配置和状态，并根据安全最佳实践给出建议和警告。许多安全相关的配置（如密码策略、用户权限、网络配置等）可以通过查询系统表和变量来评估，因此无代理模式也可以提供一些安全相关的顾问警告 (B 正确)。\nE) MySQL查询分析数据：如果MySQL服务器配置为将查询信息记录到Performance Schema的语句摘要表（如`events_statements_summary_by_digest`）或慢查询日志（如果可以远程访问或配置为写入表），MEM可以通过远程查询这些数据来进行查询分析 (E 正确)。\n\n错误选项分析（通常需要Agent来收集操作系统级别的信息）：\nC) CPU利用率：操作系统级别的CPU利用率通常需要Agent直接在主机上收集。无代理模式很难精确获取实时的、详细的OS级CPU使用情况。\nD) 磁盘使用和特性，包括磁盘相关的顾问警告：详细的磁盘I/O统计、文件系统使用率、磁盘硬件特性等通常需要Agent从操作系统层面收集。\nF) 操作系统内存利用率：同CPU，OS级别的内存使用情况需要Agent收集。\nG) 网络相关信息和特性：详细的网络流量统计、网络接口状态等OS级别信息通常也需要Agent。\n\n**考点总结:**\n此题考察MySQL Enterprise Monitor无代理监控模式下可获取的信息范围。核心在于区分哪些信息可以纯粹通过MySQL服务器的SQL接口远程获取，哪些信息需要操作系统级别的访问（通常由Agent提供）。\n\n**OCR答案提示“无代理的情况下，只能监控mysql数据库自己的状态”是一个很好的概括。**",
+        "suggestion": "### 应试技巧与学习建议\n\n**应试技巧:**\n思考信息来源：如果信息直接存在于MySQL服务器内部（状态变量、系统表、P_S、I_S），则无代理模式可能获取到。如果信息是操作系统层面的（CPU、内存、磁盘、网络细节），则通常需要Agent。\n\n**学习建议:**\n了解MySQL Enterprise Monitor的不同部署模式（有代理 vs 无代理）及其各自的优缺点和监控范围。熟悉MEM Agent的作用和它能收集的额外信息类型。学习哪些MySQL内部组件（如Performance Schema, Information Schema, sys schema, status variables）可以用于远程监控。"
+    },
+    {
+        "question": "### 试题 81:\n\nChoose four. Which four are types of information stored in the MySQL data dictionary?",
+        "selections": {
+            "A": "server runtime configuration",
+            "B": "server configuration rollback",
+            "C": "performance metrics",
+            "D": "stored procedure definitions",
+            "E": "InnoDB buffer pool LRU management data",
+            "F": "view definitions",
+            "G": "table definitions.",
+            "H": "access control lists"
+        },
+        "answers": [
+            "D",
+            "F",
+            "G",
+            "H"
+        ],
+        "summary": "### 选项分析与考点总结\n\n**选项分析:**\n此题与试题10和试题11内容相似，要求选出存储在MySQL数据字典中的信息类型。\nD) 存储过程定义 (Stored procedure definitions)：包括存储过程、函数、触发器等的定义。\nF) 视图定义 (View definitions)：视图的SQL创建语句和结构。\nG) 表定义 (Table definitions)：包括表的列、索引、约束等元数据。\nH) 访问控制列表 (Access control lists)：用户账户、角色及其权限信息。\n\n无效选项的理由同试题10和11。\n\n**考点总结:**\n再次考察对MySQL 8.0数据字典存储内容的理解。数据字典是数据库对象的元数据中心，存储的是描述数据库结构、定义和管理的信息，而非运行时状态或性能数据。",
+        "suggestion": "### 应试技巧与学习建议\n\n**应试技巧:**\n重复出现的考点需要重点记忆。理解数据字典的核心功能是存储“关于数据的数据”（元数据）。排除那些描述服务器内部操作细节、瞬时状态或性能监控数据的选项。\n\n**学习建议:**\n复习MySQL数据字典所包含的关键元数据类别。可以参考官方文档中关于数据字典的章节，明确其存储范围。对比MySQL 8.0之前版本（依赖.frm文件和mysql系统表）的元数据管理方式，有助于理解数据字典的改进和重要性。"
+    },
+    {
+        "question": "### 试题 82:\n\nChoose two. Examine this statement: `mysql> DROP ROLE r_role1, r_role2;`\nWhich two are true?",
+        "selections": {
+            "A": "You must revoke r_role1 and r_role2 from all users and other roles before dropping the roles.",
+            "B": "You must revoke all privileges from r_role1 and r_role2 before dropping the roles.",
+            "C": "It fails if at least one of the roles does not exist.",
+            "D": "Existing connections can continue to use the roles' privileges until they reconnect.",
+            "E": "It fails if you do not have the ADMIN OPTION of the roles r_role1 and r_role2.",
+            "F": "It fails if any of the roles is specified in the mandatory_roles variable."
+        },
+        "answers": [
+            "C",
+            "F"
+        ],
+        "summary": "### 选项分析与考点总结\n\n**选项分析:**\n`DROP ROLE`语句用于删除一个或多个角色。\nC) 如果尝试删除的角色中至少有一个不存在，`DROP ROLE`语句会失败并报错 (C 正确)。可以使用`IF EXISTS`子句来避免因角色不存在而报错，例如`DROP ROLE IF EXISTS r_role1, r_role2;`。\nF) 如果要删除的角色被设置在`mandatory_roles`系统变量中（或者MySQL 8.0.16+的`activate_all_roles_on_login`变量行为类似，强制激活某些角色），则尝试删除这些角色会失败，因为它们是强制性角色，不能轻易移除 (F 正确)。\n\n错误选项分析：\nA) 删除角色时，不需要预先从所有用户或其他角色中撤销该角色。当角色被删除后，之前授予该角色的用户将不再拥有通过该角色获得的权限。\nB) 角色本身是权限的集合，不是直接从角色撤销权限。权限是从用户或角色撤销，或者修改角色包含的权限。删除角色前不需要对其包含的权限进行操作。\nD) 当角色被删除后，它所代表的权限集合就不存在了。对于已建立的连接，如果用户的权限是基于这个被删除的角色，那么这些权限会立即失效。用户不需要重新连接才能使更改生效。权限检查是动态的。\nE) 删除角色需要`DROP ROLE`权限，或者拥有对`mysql`数据库的全局`CREATE ROLE`和`DROP ROLE`权限。`WITH ADMIN OPTION`是用于将角色授予其他用户的权限，与删除角色本身无关。\n\n**考点总结:**\n此题考察`DROP ROLE`语句的行为和限制。关键在于角色不存在或被系统强制使用（如`mandatory_roles`）时会导致删除失败。理解角色删除后对现有用户权限的影响。",
+        "suggestion": "### 应试技巧与学习建议\n\n**应试技巧:**\n考虑SQL DDL语句的常见行为，例如操作不存在的对象时是否报错。了解特殊系统变量（如`mandatory_roles`）如何影响对象管理。\n\n**学习建议:**\n学习MySQL角色管理的完整生命周期，包括创建（`CREATE ROLE`）、授权（`GRANT`权限给角色，`GRANT`角色给用户）、撤销（`REVOKE`）、删除（`DROP ROLE`）、重命名（`RENAME ROLE`）。了解与角色相关的系统变量和权限（如`DROP ROLE`权限）。熟悉`IF EXISTS`和`IF NOT EXISTS`等子句在DDL操作中的用法。"
+    },
+    {
+        "question": "### 试题 83:\n\nChoose two. Which two are true about differences between logical and physical upgrades of MySQL databases?",
+        "selections": {
+            "A": "Logical upgrades are much faster because they do not require restarting the mysqld process.",
+            "B": "Physical upgrades are much faster because they do not require restarting the mysqld process.",
+            "C": "Physical upgrades are performed for current instances on bare metal deployments, whereas logical upgrades are used for virtual machines or containerized instances.",
+            "D": "Post-upgrade table storage requirements after physical upgrades are usually smaller than that after logical upgrades.",
+            "E": "Post-upgrade table storage requirements after logical upgrades are usually smaller than that after physical upgrades.",
+            "F": "Physical upgrades leave data in place, whereas logical upgrades require data to be restored from mysqldump-type backups taken before the upgrades."
+        },
+        "answers": [
+            "E",
+            "F"
+        ],
+        "summary": "### 选项分析与考点总结\n\n**选项分析:**\nMySQL升级主要有两种方式：物理升级（通常是原地升级，in-place upgrade）和逻辑升级（通过导出/导入数据）。\nF) 物理升级（原地升级）通常是直接替换MySQL二进制文件，并在新版本的服务器上打开现有的数据文件。数据文件本身“保留在原地”，服务器在新版本下处理可能的数据格式或元数据更改。逻辑升级则涉及使用旧版本`mysqldump`（或类似工具）导出数据，然后在全新安装的新版本MySQL上导入这些数据 (F 正确)。\nE) 逻辑升级（导出再导入）的过程实际上是对数据进行了一次“重整”。例如，表中的碎片会被消除，索引可能会被更有效地重建。这通常会导致升级后表的存储需求（物理大小）比原始表或物理升级后的表要小，因为数据更紧凑 (E 正确)。\n\n错误选项分析：\nA) 逻辑升级（导出/导入）通常比物理升级慢得多，因为它涉及全量数据的导出和导入，以及索引重建。物理升级（原地升级）虽然也需要重启`mysqld`进程（通常多次），但其核心数据处理过程可能更快。\nB) 物理升级（原地升级）通常需要停止旧版本`mysqld`，替换二进制文件，然后启动新版本`mysqld`进行数据字典升级等步骤。这个过程肯定涉及重启。\nC) 物理升级和逻辑升级的选择与部署环境（裸金属、虚拟机、容器）没有直接的必然联系。两者都可以在各种环境中进行。选择哪种方式更多取决于升级的复杂度、可接受的停机时间、数据量、版本跨度等因素。\nD) 如E所述，逻辑升级后存储需求通常更小。物理升级保留了原始数据文件的碎片等，因此存储需求可能不会显著减小，甚至可能因为新版本的元数据等略有增加。\n\n**考点总结:**\n此题考察MySQL物理升级和逻辑升级的主要区别，特别是在数据处理方式、升级速度和升级后存储空间方面的差异。",
+        "suggestion": "### 应试技巧与学习建议\n\n**应试技巧:**\n理解物理升级和逻辑升级的基本流程。物理升级是“就地改造”，逻辑升级是“推倒重建”。从这个角度思考它们对数据、速度和空间的影响。\n\n**学习建议:**\n学习MySQL的不同升级路径和方法。掌握原地升级（in-place upgrade）和逻辑升级（logical upgrade）的步骤、优缺点、适用场景和注意事项。了解`mysql_upgrade`工具（在MySQL 8.0中已集成到服务器启动过程中）的作用。熟悉跨大版本升级的挑战和最佳实践。"
+    },
+    {
+        "question": "### 试题 84:\n\nChoose two. On examination, your MySQL installation datadir has become recursively world read/write/executable. What are two major concerns of running an installation with incorrect file privileges?",
+        "selections": {
+            "A": "Extra startup time would be required for the MySQL server to reset the privileges.",
+            "B": "MySQL binaries could be damaged, deleted, or altered.",
+            "C": "SQL injections could be used to insert bad data into the database.",
+            "D": "Data files could be deleted.",
+            "E": "Users could overwrite configuration files."
+        },
+        "answers": [
+            "D",
+            "E"
+        ],
+        "summary": "### 选项分析与考点总结\n\n**选项分析:**\n此题与试题41内容几乎完全相同，只是选项顺序可能不同。\nD) 数据文件可能被删除：所有用户都有写权限，任何用户都可能删除或损坏数据文件 (D 正确)。\nE) 用户可能覆盖配置文件：如果配置文件（如`my.cnf`或数据目录下的`mysqld-auto.cnf`）权限也过于宽松，可能被未授权修改 (E 正确)。\n\n错误选项分析同试题41。\nB) 题目特指`datadir`（数据目录）的权限问题。MySQL二进制文件通常在`basedir`（安装目录）下，其权限是另一个独立的关注点。\n\n**考点总结:**\n再次强调不正确的文件系统权限（特别是对MySQL数据目录）所带来的直接安全风险，主要体现在数据和配置的完整性与可用性受到威胁。",
+        "suggestion": "### 应试技巧与学习建议\n\n**应试技巧:**\n重复出现的考点应加强记忆。关注权限问题对数据和配置的直接影响。\n\n**学习建议:**\n参考试题41的学习建议。务必理解操作系统文件权限的重要性，并掌握如何为MySQL设置安全的权限。"
+    },
+    {
+        "question": "### 试题 85:\n\nChoose two. You made some table definition changes to a schema in your MySQL Server.\nWhich two statements reflect how MySQL Server handles the table definition changes?",
+        "selections": {
+            "A": "MySQL Server stores a copy of the serialized data in the InnoDB user tablespace.",
+            "B": "MySQL writes SDI to the binary log for distributed backups.",
+            "C": "MySQL implicitly executes FLUSH TABLES and stores a snapshot backup of the metadata.",
+            "D": "The metadata is serialized in (SDI).",
+            "E": "MySQL keeps InnoDB metadata changes in .sdi files in datadir."
+        },
+        "answers": [
+            "A",
+            "D"
+        ],
+        "summary": "### 选项分析与考点总结\n\n**选项分析:**\nMySQL 8.0引入了事务性的数据字典，并使用SDI（Serialized Dictionary Information）来存储对象的元数据。\nD) 表定义的元数据被序列化为SDI格式。这是一种紧凑的JSON格式，包含了关于表、列、索引等所有定义信息 (D 正确)。\nA) 对于InnoDB表，其SDI数据存储在该表所属的表空间文件（`.ibd`文件）内部。这意味着每个InnoDB表空间文件都包含了自身的完整元数据定义。这里的“InnoDB user tablespace”可以理解为存储用户表数据的表空间（无论是独立表空间还是通用表空间） (A 正确)。\n\n错误选项分析：\nB) SDI信息不直接写入二进制日志。二进制日志记录的是导致数据或结构更改的SQL语句或行事件，而不是元数据的序列化表示。分布式备份（如使用复制）依赖于这些事件。\nC) 修改表定义（如`ALTER TABLE`）是一个DDL操作，它会更新数据字典。MySQL不一定会在每次DDL后隐式执行`FLUSH TABLES`或创建元数据快照备份。DDL操作本身是事务性的（在支持的引擎如InnoDB上）。\nE) 对于InnoDB表，SDI存储在表空间文件内部，而不是作为单独的`.sdi`文件存放在数据目录（datadir）中。对于使用其他存储引擎（如MyISAM，在8.0中仍支持但已废弃.frm）的表，MySQL 8.0可能会为它们创建独立的`.sdi`文件来存储元数据，但InnoDB的行为是SDI内嵌于表空间。\n\n**考点总结:**\n此题考察MySQL 8.0中表定义元数据的存储方式，特别是SDI的概念以及InnoDB表SDI的存放位置。核心是元数据序列化和内嵌于InnoDB表空间。",
+        "suggestion": "### 应试技巧与学习建议\n\n**应试技巧:**\n记住MySQL 8.0数据字典和SDI是元数据管理的核心。理解SDI如何使得元数据与数据更紧密地结合（特别是对于InnoDB）。\n\n**学习建议:**\n学习MySQL 8.0数据字典的架构和优势。了解SDI（Serialized Dictionary Information）的格式（JSON）和作用。掌握不同存储引擎（特别是InnoDB）如何存储和管理SDI信息。理解这与旧版本（依赖`.frm`文件）的元数据管理的区别。"
+    },
+    {
+        "question": "### 试题 86:\n\nChoose three. Which three settings control global buffers shared by all threads on a MySQL server?",
+        "selections": {
+            "A": "tmp_table_size",
+            "B": "innodb_buffer_pool_size",
+            "C": "table_open_cache",
+            "D": "sort_buffer_size",
+            "E": "key_buffer_size",
+            "F": "read_buffer_size"
+        },
+        "answers": [
+            "B",
+            "C",
+            "E"
+        ],
+        "summary": "### 选项分析与考点总结\n\n**选项分析:**\nMySQL服务器的内存缓冲区分为全局缓冲区（所有线程共享）和会话级缓冲区（每个连接线程独有）。\nB) `innodb_buffer_pool_size`：InnoDB存储引擎用于缓存数据和索引的主缓冲池。这是一个非常重要的全局共享缓冲区 (B 正确)。\nE) `key_buffer_size`：MyISAM存储引擎用于缓存索引块的缓冲区。这也是一个全局共享缓冲区（如果使用MyISAM表） (E 正确)。\nC) `table_open_cache`（或`table_definition_cache`）：`table_open_cache`控制服务器可以保持打开状态的表文件描述符的数量。虽然不直接是“数据”缓冲区，但它是一个全局共享的缓存结构，用于缓存打开表的元数据和状态，影响所有线程对表的访问性能。`table_definition_cache`则缓存表定义。这些可以广义地视为全局共享的缓存/缓冲机制 (C 正确，这里指`table_open_cache`作为一种全局共享资源)。\n\n错误选项分析（这些通常是会话级缓冲区）：\nA) `tmp_table_size`：控制内存中创建的内部临时表（MEMORY引擎）的最大大小。这是一个会话级设置，每个线程在需要时分配。\nD) `sort_buffer_size`：用于排序操作（如`ORDER BY`, `GROUP BY`）的缓冲区大小。每个需要排序的线程会分配自己的排序缓冲区，是会话级的。\nF) `read_buffer_size`：用于顺序扫描表时读取数据的缓冲区大小。每个进行顺序扫描的线程会分配，是会话级的。（注意：`read_rnd_buffer_size`用于随机读，也是会话级）。\n\n**考点总结:**\n此题考察对MySQL内存管理中全局共享缓冲区和会话级缓冲区的区分。InnoDB缓冲池和MyISAM键缓冲是典型的全局数据/索引缓存。表缓存（打开表缓存、表定义缓存）也是全局共享的。\n\n**OCR中对各个缓冲区的解释基本正确。**",
+        "suggestion": "### 应试技巧与学习建议\n\n**应试技巧:**\n区分哪些内存区域是所有连接共享的（如缓冲池、键缓冲、查询缓存（已废弃）），哪些是每个连接单独分配的（如排序缓冲、连接缓冲、读缓冲、临时表内存）。\n\n**学习建议:**\n学习MySQL内存架构，包括全局缓冲区和线程（会话）级缓冲区的种类、作用和配置参数。理解如何根据服务器负载和可用内存来合理配置这些缓冲区，以优化性能。特别是`innodb_buffer_pool_size`的调优至关重要。"
+    },
+    {
+        "question": "### 试题 87:\n\nChoose two. You are using `mysqlcheck` for server maintenance. Which two statements are true?",
+        "selections": {
+            "A": "The mysqlcheck --check --all-databases command takes table write locks while performing a series of checks.",
+            "B": "The mysqlcheck --repair --all-databases command can repair an InnoDB corrupted table.",
+            "C": "The mysqlcheck --analyze --all-databases command performs a series of checks to spot eventual table corruptions.",
+            "D": "The mysqlcheck command can be renamed mysqlrepair so that it repairs tables by default.",
+            "E": "The mysqlcheck --optimize --all-databases command reclaims free space from table files."
+        },
+        "answers": [
+            "D",
+            "E"
+        ],
+        "summary": "### 选项分析与考点总结\n\n**选项分析:**\n`mysqlcheck`是一个客户端工具，用于检查、修复、分析和优化表。它实际上是`REPAIR TABLE`, `ANALYZE TABLE`, `OPTIMIZE TABLE`, `CHECK TABLE`等SQL语句的命令行接口。\nD) `mysqlcheck`程序如果被重命名（或作为符号链接）为`mysqlrepair`，则其默认操作会变为修复表（相当于执行`mysqlcheck --repair`） (D 正确)。\nE) `mysqlcheck --optimize --all-databases`命令（等同于对所有表执行`OPTIMIZE TABLE`）会尝试回收表中的未使用空间并整理碎片，从而可能减小表文件的大小并提高性能 (E 正确)。\n\n错误选项分析：\nA) `mysqlcheck --check`（或`CHECK TABLE`）通常对表加读锁（READ lock）进行检查，以允许其他会话读取数据，但阻止写入。它不一定总是加写锁（WRITE lock），除非检查操作本身需要（例如，某些引擎的特定检查级别）。\nB) `mysqlcheck --repair`（或`REPAIR TABLE`）主要用于修复MyISAM表。对于InnoDB表，它通常只是报告表是InnoDB类型，并建议使用InnoDB自身的崩溃恢复机制或更高级的恢复方法（如从备份恢复）。InnoDB表损坏通常不能通过简单的`REPAIR TABLE`修复。\nC) `mysqlcheck --analyze`（或`ANALYZE TABLE`）用于更新表的键分布统计信息（如索引基数），以帮助查询优化器生成更好的执行计划。它不直接“检查表损坏”。检查损坏是`--check`选项的功能。\n\n**考点总结:**\n此题考察对`mysqlcheck`工具不同操作（`--check`, `--repair`, `--analyze`, `--optimize`）及其对应SQL语句功能的理解。注意不同存储引擎对这些操作的支持程度和行为差异（特别是InnoDB与MyISAM）。",
+        "suggestion": "### 应试技巧与学习建议\n\n**应试技巧:**\n将`mysqlcheck`的选项与对应的SQL管理语句（`CHECK TABLE`, `REPAIR TABLE`, `ANALYZE TABLE`, `OPTIMIZE TABLE`）联系起来。理解这些语句对不同存储引擎（尤其是InnoDB和MyISAM）的适用性和效果。\n\n**学习建议:**\n学习使用`mysqlcheck`客户端工具进行表维护。掌握其常用选项（`--all-databases`, `--databases`, `--tables`, `--check`, `--repair`, `--analyze`, `--optimize`, `--auto-repair`等）。了解不同存储引擎的维护需求和方法。特别是对于InnoDB表，理解其崩溃恢复机制和通常不需要（也不能有效）使用`REPAIR TABLE`的原因。"
+    },
+    {
+        "question": "### 试题 88:\n\nWhich two MySQL Server accounts are locked by default?",
+        "selections": {
+            "A": "any new ROLE accounts",
+            "B": "any user created without a password",
+            "C": "any internal system accounts",
+            "D": "any user created with a username, but missing the host name"
+        },
+        "answers": [
+            "A",
+            "C"
+        ],
+        "summary": "### 选项分析与考点总结\n\n**选项分析:**\n此题与试题64内容几乎完全相同，只是选项顺序和其中一个错误选项的表述略有不同。\nA) 新创建的角色（ROLE accounts）本身不能用于登录，它们是权限集合，从这个意义上讲可以视为“锁定的”（不可直接登录） (A 正确)。\nC) MySQL内部系统账户（如`mysql.sys`, `mysql.session`, `mysql.infoschema`等）通常被设计为不能从外部登录，或具有极受限的权限，可被视为默认“锁定” (C 正确)。\n\n错误选项分析同试题64。\n(OCR中试题64的E选项是“any user created without a password”，本题的B选项与之相同。试题64的D选项是“any user set as DEFINER for stored programs”，本题没有这个选项，而是有一个选项E“any user set as DEFINER for stored programs”，但它被标记为错误）。\n\n**考点总结:**\n再次强调对MySQL中不同类型账户及其默认登录或使用状态的理解。核心是区分可用于客户端登录的用户账户和用于其他目的（如权限聚合、系统内部操作）的账户。",
+        "suggestion": "### 应试技巧与学习建议\n\n**应试技巧:**\n重复的考点应引起重视。如果“锁定”指“不能用于客户端直接登录”，则角色和内部系统账户符合这个描述。\n\n**学习建议:**\n参考试题64的学习建议。重点理解用户账户、角色、系统账户在MySQL安全模型中的不同角色和行为。"
+    },
+    {
+        "question": "### 试题 89:\n\nChoose three. Your MySQL server is running on the Microsoft Windows platform.\nWhich three local connection protocols are available to you?",
+        "selections": {
+            "A": "UDP",
+            "B": "shared memory",
+            "C": "SOCKET",
+            "D": "named pipes",
+            "E": "X Protocol",
+            "F": "TCP/IP"
+        },
+        "answers": [
+            "B",
+            "D",
+            "F"
+        ],
+        "summary": "### 选项分析与考点总结\n\n**选项分析:**\n在Windows平台上，MySQL支持以下本地连接协议：\nB) 共享内存（Shared Memory）：如果服务器启用了共享内存连接，客户端可以使用此协议进行高效的本地连接 (B 正确)。\nD) 命名管道（Named Pipes）：这是Windows上另一种常用的本地进程间通信机制，MySQL支持通过命名管道进行连接 (D 正确)。\nF) TCP/IP：即使是本地连接，也可以通过TCP/IP连接到`localhost`或`127.0.0.1`。这在所有平台上都可用（只要网络栈启用） (F 正确)。\n\n错误选项分析：\nA) UDP：MySQL不使用UDP进行标准客户端-服务器连接。\nC) SOCKET（Unix域套接字）：这是类Unix系统（如Linux, macOS）上用于本地连接的机制，在Windows上通常不可用或不作为标准MySQL连接方式。\nE) X Protocol：X Protocol是一种新的MySQL通信协议（用于MySQL Shell和X DevAPI），它也运行在TCP/IP之上，或者可以使用本地套接字/管道。但它本身不是一个独立的“本地连接协议”类型，而是构建在现有传输层之上的应用层协议。题目问的是连接“协议”，TCP/IP是其基础。\n\n**考点总结:**\n此题考察在Windows平台上MySQL支持的本地连接方式。主要是TCP/IP（到本地地址）、命名管道和共享内存。\n\n**OCR答案提示“在windows上没有socket”是正确的。**",
+        "suggestion": "### 应试技巧与学习建议\n\n**应试技巧:**\n区分不同操作系统平台支持的本地连接机制。Windows有其特有的IPC方式（命名管道、共享内存），而类Unix系统常用Unix套接字。\n\n**学习建议:**\n学习MySQL在不同操作系统上的安装和配置差异。了解如何启用和使用Windows上的命名管道和共享内存连接。熟悉`--protocol`客户端选项以及与特定协议相关的其他连接参数（如`--pipe`, `--shared-memory-base-name`）。"
+    },
+    {
+        "question": "### 试题 90:\n\nWhich two authentication plugins require the plain text client plugin (`mysql_clear_password`) for authentication to work?",
+        "selections": {
+            "A": "Windows Native authentication",
+            "B": "PAM authentication",
+            "C": "LDAP SASL authentication",
+            "D": "LDAP authentication",
+            "E": "SHA256 authentication",
+            "F": "MySQL Native Password"
+        },
+        "answers": [
+            "B",
+            "D"
+        ],
+        "summary": "### 选项分析与考点总结\n\n**选项分析:**\n此题与试题9内容几乎完全相同，只是选项顺序可能不同。\n客户端插件`mysql_clear_password`用于在客户端和服务器之间以明文形式传输密码，通常是当服务器端认证插件需要接收实际密码以进行验证时（例如，将其传递给外部认证系统如LDAP或PAM）。\nB) PAM认证插件：如果配置的PAM服务栈需要明文密码，则MySQL服务器端的PAM插件会要求客户端发送明文密码 (B 正确)。\nD) LDAP认证插件：如果配置为简单的LDAP绑定（Simple Bind），服务器端的LDAP插件通常需要从客户端接收明文密码 (D 正确)。\n\n错误选项分析同试题9。\n\n**考点总结:**\n再次考察MySQL认证插件中哪些需要客户端以明文形式发送密码。关键在于理解外部认证系统（如LDAP简单绑定、某些PAM模块）可能需要原始密码进行验证。",
+        "suggestion": "### 应试技巧与学习建议\n\n**应试技巧:**\n重复的考点应熟记。明文密码传输通常与将认证委托给需要密码的外部系统有关。\n\n**学习建议:**\n参考试题9的学习建议。重点掌握需要`mysql_clear_password`的场景，并务必记住使用此插件时必须配合SSL/TLS加密连接以保护传输中的密码安全。"
+    },
+    {
+        "question": "### 试题 91:\n\nChoose two. Which two statements are true about the data dictionary object cache?",
+        "selections": {
+            "A": "The dictionary object caches use a Least Recently Used (LRU) algorithm to manage entries in cache.",
+            "B": "Character set and collation definition objects are not cached.",
+            "C": "All dictionary object caches have a hard-coded size.",
+            "D": "If the dictionary object cache becomes full, MySQL server will be unable to create any more tables/objects.",
+            "E": "tablespace_definition_cache sets the number of tablespace objects that can be stored in the dictionary object cache."
+        },
+        "answers": [
+            "A",
+            "E"
+        ],
+        "summary": "### 选项分析与考点总结\n\n**选项分析:**\nMySQL 8.0的数据字典引入了对象缓存，以提高对常用元数据对象的访问性能。\nA) 数据字典对象缓存（如表定义缓存、存储过程缓存等）通常会使用某种缓存替换算法，如LRU（最近最少使用）或其变体，来管理缓存中的条目并在缓存满时逐出旧条目 (A 正确)。\nE) `tablespace_definition_cache` (MySQL 8.0.13前为`table_definition_cache`的一部分，8.0.13后独立) 是一个系统变量，用于设置可以缓存的表空间定义对象的数量。这是数据字典对象缓存大小配置的一个例子 (E 正确)。类似地，`table_definition_cache`控制表定义对象的缓存数量，`stored_routine_cache`控制存储过程和函数定义的缓存数量等。\n\n错误选项分析：\nB) 字符集和校对规则的定义信息也是元数据的一部分，它们会被缓存以加速处理。说它们不被缓存是错误的。\nC) 数据字典对象缓存的大小不是硬编码的，而是可以通过相关的系统变量进行配置（如`table_definition_cache`, `tablespace_definition_cache`, `stored_routine_cache`等）。\nD) 如果数据字典对象缓存已满，当需要加载新的对象定义时，会根据替换算法（如LRU）逐出现有条目为新条目腾出空间。服务器仍然能够创建新的表/对象，只是访问未缓存对象的元数据时需要从磁盘（数据字典表）加载，性能可能略有下降。它不会导致无法创建新对象。\n\n**考点总结:**\n此题考察对MySQL 8.0数据字典对象缓存机制的理解，包括其缓存管理算法（如LRU）和可配置性（通过系统变量）。",
+        "suggestion": "### 应试技巧与学习建议\n\n**应试技巧:**\n理解缓存的基本工作原理：加速访问常用数据，使用替换算法管理有限空间。将数据字典对象缓存视为一种性能优化机制。\n\n**学习建议:**\n学习MySQL 8.0数据字典的内部实现，特别是其对象缓存的设计。了解相关的配置参数（如`table_definition_cache`, `tablespace_definition_cache`, `stored_routine_cache`），以及如何根据工作负载调整它们的大小以优化元数据访问性能。监控与数据字典缓存相关的状态变量（如果有的话）可以帮助评估缓存效率。"
+    }
+]
